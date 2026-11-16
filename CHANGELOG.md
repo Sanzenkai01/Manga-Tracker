@@ -15,6 +15,19 @@ Project changes are recorded here. Entries describe repository changes, not plan
 - Passou: `.\gradlew.bat --no-daemon :core:data:lintDebug :app:lintDebug` — **BUILD SUCCESSFUL**.
 - O build emitiu o aviso conhecido de incompatibilidade de versão XML do Android SDK. A primeira execução após localizar o JDK 17 encontrou expectativas antigas no teste de strings; elas foram atualizadas para a mensagem compatível com intervalo configurável e o comando acima passou.
 
+## 2026-11-15 — Atualizando todos os mangás monitorados
+
+### Alterações
+
+- A biblioteca oferece atualização por gesto Material 3 de pull-to-refresh e por uma ação explícita "Atualizar tudo".
+- A atualização sequencial verifica apenas mangás com monitoramento ativo usando o `MangaCheckCoordinator` existente, preservando a serialização por mangá e o intervalo de 2 segundos entre requisições ao mesmo host. A UI não bloqueia e mostra a quantidade de verificações bem-sucedidas e com falha.
+- O resumo é localizado em inglês e pt-BR. Não foram adicionadas permissões nem dependências.
+
+### Verificação
+
+- Passou: `.\gradlew.bat --no-daemon :app:testDebugUnitTest :app:lintDebug` — **BUILD SUCCESSFUL**; testes unitários do app e lint passaram. O teste de ViewModel cobre atualização assíncrona, exclusão de mangá pausado e resumo de sucesso/falha.
+- O build emitiu o aviso conhecido de incompatibilidade de versão XML do Android SDK. Não foi realizado refresh contra sites ao vivo nem teste em dispositivo.
+
 ## 2026-11-15 — Preenchendo metadados em mangás existentes
 
 ### Alterações

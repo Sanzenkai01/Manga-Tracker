@@ -65,6 +65,7 @@ fun MangaTrackerNavigation(
                 onOpenSettings = { navController.navigate(SETTINGS_ROUTE) },
                 onLayoutChanged = viewModel::setLayout,
                 onReadFilterChanged = viewModel::setReadFilter,
+                onRefreshAll = viewModel::refreshAllMonitoredManga,
                 onMangaLongPress = viewModel::selectManga,
                 onMangaSelectionToggle = viewModel::toggleMangaSelection,
                 onClearSelection = viewModel::clearSelection,

@@ -11,6 +11,7 @@ import com.sanzenkai.mangatracker.core.domain.model.MangaMetadataUpdate
 import com.sanzenkai.mangatracker.core.domain.model.MangaBackupSnapshot
 import com.sanzenkai.mangatracker.core.domain.model.MangaRegistrationResult
 import com.sanzenkai.mangatracker.core.domain.model.MangaSummary
+import com.sanzenkai.mangatracker.monitoring.MangaCheckResult
 import com.sanzenkai.mangatracker.core.domain.model.MonitoringSettings
 import com.sanzenkai.mangatracker.core.domain.model.ReadingAction
 import com.sanzenkai.mangatracker.core.domain.model.ReadingActionOrigin
@@ -22,9 +23,11 @@ import com.sanzenkai.mangatracker.core.domain.repository.MangaRepository
 import com.sanzenkai.mangatracker.core.domain.repository.LibraryPreferencesRepository
 import com.sanzenkai.mangatracker.monitoring.MonitoringScheduler
 import com.sanzenkai.mangatracker.notifications.ChapterNotificationPublisher
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flow
@@ -33,6 +36,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
@@ -55,6 +59,7 @@ class LibraryViewModelTest {
                 throw IllegalStateException("Local database unavailable")
             }),
             TestLibraryPreferencesRepository,
+            checkMonitoredManga = { error("Not used in this test") },
         )
         val store = ViewModelStore()
         store.put("library", viewModel)
@@ -83,6 +88,7 @@ class LibraryViewModelTest {
             preferencesRepository = TestLibraryPreferencesRepository,
             monitoringScheduler = scheduler,
             notificationPublisher = notificationPublisher,
+            checkMonitoredManga = { error("Not used in this test") },
         )
         val store = ViewModelStore()
         store.put("library", viewModel)
@@ -118,6 +124,81 @@ class LibraryViewModelTest {
         assertEquals(setOf("manga-1"), notificationPublisher.cancelledMangaIds)
         assertFalse(viewModel.uiState.value.isSelectionMode)
 
+        job.cancel()
+        store.clear()
+    }
+
+    @Test
+    fun refreshChecksOnlyMonitoredMangaAsynchronouslyAndSummarizesResults() = runTest {
+        val library = MutableStateFlow(
+            listOf(
+                MangaSummary(
+                    id = "monitored-success",
+                    title = "Monitored Success",
+                    originalCoverUrl = null,
+                    monitoringEnabled = true,
+                ),
+                MangaSummary(
+                    id = "paused",
+                    title = "Paused",
+                    originalCoverUrl = null,
+                    monitoringEnabled = false,
+                ),
+                MangaSummary(
+                    id = "monitored-failure",
+                    title = "Monitored Failure",
+                    originalCoverUrl = null,
+                    monitoringEnabled = true,
+                ),
+            ),
+        )
+        val checkCalls = mutableListOf<String>()
+        val firstCheckGate = CompletableDeferred<Unit>()
+        val viewModel = LibraryViewModel(
+            mangaRepository = TestMangaRepository(library),
+            preferencesRepository = TestLibraryPreferencesRepository,
+            checkMonitoredManga = { mangaId ->
+                checkCalls += mangaId
+                if (mangaId == "monitored-success") {
+                    firstCheckGate.await()
+                    MangaCheckResult.Success(
+                        mangaId = mangaId,
+                        normalizedHost = "example.com",
+                        newChapterCount = 1,
+                        checkedAtEpochMillis = 1L,
+                    )
+                } else {
+                    MangaCheckResult.Failure(
+                        mangaId = mangaId,
+                        normalizedHost = "example.com",
+                        errorCode = "PARSE_FAILED",
+                        message = "Could not parse page",
+                        retryable = false,
+                    )
+                }
+            },
+        )
+        val store = ViewModelStore().apply { put("library", viewModel) }
+        val job = launch(StandardTestDispatcher(testScheduler)) {
+            viewModel.uiState.collect()
+        }
+        advanceUntilIdle()
+
+        viewModel.refreshAllMonitoredManga()
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.isRefreshing)
+        assertEquals(listOf("monitored-success"), checkCalls)
+
+        firstCheckGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(listOf("monitored-success", "monitored-failure"), checkCalls)
+        assertEquals(
+            LibraryRefreshSummary(updatedCount = 1, failedCount = 1),
+            viewModel.uiState.value.refreshSummary,
+        )
+        assertFalse(viewModel.uiState.value.isRefreshing)
         job.cancel()
         store.clear()
     }

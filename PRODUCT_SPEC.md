@@ -42,7 +42,7 @@ Permitir que a pessoa acompanhe mangás a partir de links de páginas de capítu
 14. **Conteúdo da notificação.** Ao detectar um novo capítulo, incluir a capa original, o nome do mangá, o capítulo, o site e o horário da detecção. Se a imagem estiver indisponível, a falha da capa não deve impedir a notificação textual.
 15. **Ações separadas.** Disponibilizar ações distintas para abrir o capítulo e marcá-lo como lido. Abrir pela notificação também não marca como lido implicitamente.
 16. **Monitoramento periódico.** Usar WorkManager para monitoramento adiável em segundo plano, com intervalo padrão solicitado de uma hora. Informar corretamente o horário da última verificação e respeitar constraints, economia de bateria, Doze, conectividade e demais limitações do Android: uma hora é a periodicidade desejada, não garantia de execução pontual.
-17. **Atualização manual.** Disponibilizar um botão para solicitar atualização manual. A operação deve distinguir sucesso sem novidades de falhas de conexão, acesso ou parsing.
+17. **Atualização manual.** Disponibilizar atualização manual por mangá e uma ação "Atualizar tudo" na biblioteca para todos os mangás com monitoramento ativo. Executar sem bloquear a interface, distinguir sucesso sem novidades de falhas de conexão, acesso ou parsing e apresentar o resumo de resultados da atualização em lote.
 18. **Controle individual.** Permitir pausar e reativar o monitoramento para cada mangá sem apagar seus dados, capítulos ou histórico.
 
 ### Persistência, compatibilidade e resiliência
@@ -85,6 +85,5 @@ Estas escolhas não alteram os requisitos funcionais e devem ser decididas com b
 - Política detalhada para normalização de domínios (por exemplo, subdomínios e redirecionamentos).
 - Formato interno e regras de ordenação que preservem capítulos inteiros, decimais, especiais e extras.
 - Representação visual exata dos status, além dos dados de verificação e monitoramento requeridos.
-- Se a ação de atualização manual se aplica à biblioteca inteira, a um mangá, ou oferece ambos os escopos.
 - Estratégia técnica para fontes cujo conteúdo só existe após execução de JavaScript. Não contornar controles do site; quando a extração permitida não for possível, comunicar a limitação e preservar os dados anteriores.
 - Target SDK, versões de dependências, estratégia de fixtures, esquema Room e estratégia de migrações compatíveis com o toolchain escolhido.

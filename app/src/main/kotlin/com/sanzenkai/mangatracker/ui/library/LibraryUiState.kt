@@ -23,6 +23,9 @@ data class LibraryUiState(
     val mangas: List<MangaSummary> = emptyList(),
     val layout: LibraryLayout = LibraryLayout.LIST,
     val readFilter: LibraryReadFilter = LibraryReadFilter.ALL,
+    val isRefreshing: Boolean = false,
+    val refreshSummary: LibraryRefreshSummary? = null,
+    val refreshError: String? = null,
     val selectedMangaIds: Set<String> = emptySet(),
     val isActionInProgress: Boolean = false,
     val actionError: String? = null,
@@ -41,3 +44,8 @@ data class LibraryUiState(
             }
         }
 }
+
+data class LibraryRefreshSummary(
+    val updatedCount: Int,
+    val failedCount: Int,
+)

@@ -3,6 +3,8 @@
     <string name="library_title">Minha biblioteca</string>
     <string name="library_empty_title">Sua biblioteca está vazia</string>
     <string name="library_empty_body">Os mangás adicionados aparecerão aqui.</string>
+    <string name="library_refresh_all">Atualizar todos os mangás monitorados</string>
+    <string name="library_refresh_summary">%1$d atualizados, %2$d com falha</string>
     <string name="settings_action">Configurações</string>
     <string name="settings_title">Configurações</string>
     <string name="settings_layout_title">Visualização da biblioteca</string>

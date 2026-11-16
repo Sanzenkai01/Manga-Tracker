@@ -248,7 +248,7 @@ Abrir capítulo (na tela ou notificação) apenas abre o link. Marcar/desmarcar 
 - Definir tratamento de identidade duplicada quando a página de série não puder ser detectada.
 - Capítulos novos começam não lidos. Decidir se o primeiro cadastro estabelece baseline sem notificações para esses capítulos.
 - Definir regra de ordenação entre capítulos numéricos e especiais/extra com amostras reais.
-- Definir se atualização manual abrange biblioteca, manga selecionado ou ambos.
+- Decidido e implementado: a atualização manual continua disponível no detalhe de cada mangá e a biblioteca oferece "Atualizar tudo" para todos os mangás com monitoramento ativo, usando o coordenador existente e exibindo o resumo de sucessos e falhas.
 - Definir como reportar pedido de notificação negado e se haverá uma opção explícita para reprocessar aviso pendente.
 - Avaliar, após exemplos reais e consulta de permissões/termos, se há fonte dinâmica que justifique WebView assistida; sem tal validação, manter como não suportada para monitoramento automático.
 - Selecionar páginas/tipos de conteúdo e autorizações para testar os três domínios candidatos. Nenhum está validado hoje.

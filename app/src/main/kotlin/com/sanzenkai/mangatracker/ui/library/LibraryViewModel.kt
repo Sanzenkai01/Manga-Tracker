@@ -1,19 +1,23 @@
 package com.sanzenkai.mangatracker.ui.library
 
 import android.database.sqlite.SQLiteException
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sanzenkai.mangatracker.core.localization.localizedMessage
 import com.sanzenkai.mangatracker.core.domain.model.LibraryLayout
+import com.sanzenkai.mangatracker.core.domain.model.MangaSummary
 import com.sanzenkai.mangatracker.core.domain.model.ReadingAction
 import com.sanzenkai.mangatracker.core.domain.model.ReadingActionOrigin
 import com.sanzenkai.mangatracker.core.domain.repository.LibraryPreferencesRepository
 import com.sanzenkai.mangatracker.core.domain.repository.MangaRepository
+import com.sanzenkai.mangatracker.monitoring.MangaCheckResult
 import com.sanzenkai.mangatracker.monitoring.MonitoringScheduler
 import com.sanzenkai.mangatracker.monitoring.NoOpMonitoringScheduler
 import com.sanzenkai.mangatracker.notifications.ChapterNotificationPublisher
 import com.sanzenkai.mangatracker.notifications.NoOpChapterNotificationPublisher
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.catch
@@ -27,6 +31,7 @@ class LibraryViewModel(
     private val monitoringScheduler: MonitoringScheduler = NoOpMonitoringScheduler,
     private val notificationPublisher: ChapterNotificationPublisher =
         NoOpChapterNotificationPublisher,
+    private val checkMonitoredManga: suspend (String) -> MangaCheckResult,
 ) : ViewModel() {
     private val preferenceError = MutableStateFlow<String?>(null)
     private val interactionState = MutableStateFlow(LibraryInteractionState())
@@ -42,6 +47,9 @@ class LibraryViewModel(
             mangas = mangas,
             layout = layout,
             readFilter = interaction.readFilter,
+            isRefreshing = interaction.isRefreshing,
+            refreshSummary = interaction.refreshSummary,
+            refreshError = interaction.refreshError,
             selectedMangaIds = interaction.selectedMangaIds,
             isActionInProgress = interaction.isActionInProgress,
             actionError = interaction.actionError,
@@ -81,6 +89,60 @@ class LibraryViewModel(
 
     fun setReadFilter(filter: LibraryReadFilter) {
         interactionState.value = interactionState.value.copy(readFilter = filter)
+    }
+
+    fun refreshAllMonitoredManga() {
+        val current = interactionState.value
+        if (current.isRefreshing || current.isActionInProgress) return
+
+        val mangaIds = uiState.value.mangas
+            .filter(MangaSummary::monitoringEnabled)
+            .map(MangaSummary::id)
+        if (mangaIds.isEmpty()) return
+
+        interactionState.value = current.copy(
+            isRefreshing = true,
+            refreshSummary = null,
+            refreshError = null,
+        )
+        viewModelScope.launch {
+            var updatedCount = 0
+            var failedCount = 0
+            var currentMangaId: String? = null
+            var refreshError: String? = null
+            var completed = false
+            try {
+                mangaIds.forEach { mangaId ->
+                    currentMangaId = mangaId
+                    when (checkMonitoredManga(mangaId)) {
+                        is MangaCheckResult.Success -> updatedCount++
+                        is MangaCheckResult.Failure -> failedCount++
+                        is MangaCheckResult.Skipped -> Unit
+                    }
+                    currentMangaId = null
+                }
+                completed = true
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (currentMangaId != null) failedCount++
+                Log.e(TAG, "Could not finish refreshing monitored manga.", error)
+                refreshError = localizedMessage(
+                    english = "The refresh could not be completed.",
+                    portugueseBrazilian = "Não foi possível concluir a atualização.",
+                )
+            } finally {
+                interactionState.value = interactionState.value.copy(
+                    isRefreshing = false,
+                    refreshSummary = if (completed || refreshError != null) {
+                        LibraryRefreshSummary(updatedCount, failedCount)
+                    } else {
+                        null
+                    },
+                    refreshError = refreshError,
+                )
+            }
+        }
     }
 
     fun selectManga(mangaId: String) {
@@ -182,8 +244,15 @@ class LibraryViewModel(
 
     private data class LibraryInteractionState(
         val readFilter: LibraryReadFilter = LibraryReadFilter.ALL,
+        val isRefreshing: Boolean = false,
+        val refreshSummary: LibraryRefreshSummary? = null,
+        val refreshError: String? = null,
         val selectedMangaIds: Set<String> = emptySet(),
         val isActionInProgress: Boolean = false,
         val actionError: String? = null,
     )
+
+    private companion object {
+        const val TAG = "LibraryViewModel"
+    }
 }

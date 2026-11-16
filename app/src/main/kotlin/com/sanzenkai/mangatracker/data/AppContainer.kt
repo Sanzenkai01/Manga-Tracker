@@ -82,6 +82,7 @@ class AppContainer(context: Context) {
                 preferencesRepository = libraryPreferencesRepository,
                 monitoringScheduler = monitoringScheduler,
                 notificationPublisher = chapterNotificationPublisher,
+                mangaCheckCoordinator = mangaCheckCoordinator,
             )
     val settingsViewModelFactory: ViewModelProvider.Factory =
         SettingsViewModelFactory(
@@ -127,6 +128,7 @@ private class LibraryViewModelFactory(
     private val preferencesRepository: LibraryPreferencesRepository,
     private val monitoringScheduler: MonitoringScheduler,
     private val notificationPublisher: ChapterNotificationPublisher,
+    private val mangaCheckCoordinator: MangaCheckCoordinator,
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(LibraryViewModel::class.java)) {
@@ -136,6 +138,13 @@ private class LibraryViewModelFactory(
                 preferencesRepository = preferencesRepository,
                 monitoringScheduler = monitoringScheduler,
                 notificationPublisher = notificationPublisher,
+                checkMonitoredManga = { mangaId ->
+                    mangaCheckCoordinator.check(
+                        mangaId = mangaId,
+                        trigger = "MANUAL",
+                        requireMonitoringEnabled = true,
+                    )
+                },
             ) as T
         }
         throw IllegalArgumentException("Unsupported ViewModel: ${modelClass.name}")

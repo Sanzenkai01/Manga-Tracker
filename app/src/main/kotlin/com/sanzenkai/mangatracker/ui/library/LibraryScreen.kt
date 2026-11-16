@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
@@ -41,6 +42,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,6 +71,7 @@ fun LibraryScreen(
     onOpenSettings: () -> Unit,
     onLayoutChanged: (LibraryLayout) -> Unit,
     onReadFilterChanged: (LibraryReadFilter) -> Unit,
+    onRefreshAll: () -> Unit,
     onMangaClick: (String) -> Unit,
     onMangaLongPress: (String) -> Unit,
     onMangaSelectionToggle: (String) -> Unit,
@@ -104,6 +107,24 @@ fun LibraryScreen(
                             Text(stringResource(R.string.library_cancel_selection))
                         }
                     } else {
+                        if (state.mangas.any(MangaSummary::monitoringEnabled)) {
+                            IconButton(
+                                onClick = onRefreshAll,
+                                enabled = !state.isRefreshing && !state.isActionInProgress,
+                            ) {
+                                if (state.isRefreshing) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp,
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Filled.Refresh,
+                                        contentDescription = stringResource(R.string.library_refresh_all),
+                                    )
+                                }
+                            }
+                        }
                         IconButton(onClick = onOpenSettings) {
                             Icon(
                                 imageVector = Icons.Filled.Settings,
@@ -259,6 +280,26 @@ fun LibraryScreen(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
+                state.refreshSummary?.let { summary ->
+                    Text(
+                        text = stringResource(
+                            R.string.library_refresh_summary,
+                            summary.updatedCount,
+                            summary.failedCount,
+                        ),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        color = MaterialTheme.colorScheme.secondary,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                state.refreshError?.let { message ->
+                    Text(
+                        text = message,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
                 if (visibleMangas.isEmpty()) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -277,40 +318,52 @@ fun LibraryScreen(
                             style = MaterialTheme.typography.bodyLarge,
                         )
                     }
-                } else if (state.layout == LibraryLayout.LIST) {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        items(visibleMangas, key = MangaSummary::id) { manga ->
-                            MangaRow(
-                                manga = manga,
-                                selectionMode = state.isSelectionMode,
-                                isSelected = manga.id in state.selectedMangaIds,
-                                onClick = { onMangaClick(manga.id) },
-                                onLongPress = { onMangaLongPress(manga.id) },
-                                onSelectionToggle = { onMangaSelectionToggle(manga.id) },
-                            )
-                        }
-                    }
                 } else {
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 144.dp),
+                    PullToRefreshBox(
+                        isRefreshing = state.isRefreshing,
+                        onRefresh = {
+                            if (!state.isSelectionMode && !state.isActionInProgress) {
+                                onRefreshAll()
+                            }
+                        },
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        items(visibleMangas, key = MangaSummary::id) { manga ->
-                            MangaTile(
-                                manga = manga,
-                                selectionMode = state.isSelectionMode,
-                                isSelected = manga.id in state.selectedMangaIds,
-                                onClick = { onMangaClick(manga.id) },
-                                onLongPress = { onMangaLongPress(manga.id) },
-                                onSelectionToggle = { onMangaSelectionToggle(manga.id) },
-                            )
+                        if (state.layout == LibraryLayout.LIST) {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                items(visibleMangas, key = MangaSummary::id) { manga ->
+                                    MangaRow(
+                                        manga = manga,
+                                        selectionMode = state.isSelectionMode,
+                                        isSelected = manga.id in state.selectedMangaIds,
+                                        onClick = { onMangaClick(manga.id) },
+                                        onLongPress = { onMangaLongPress(manga.id) },
+                                        onSelectionToggle = { onMangaSelectionToggle(manga.id) },
+                                    )
+                                }
+                            }
+                        } else {
+                            LazyVerticalGrid(
+                                columns = GridCells.Adaptive(minSize = 144.dp),
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                items(visibleMangas, key = MangaSummary::id) { manga ->
+                                    MangaTile(
+                                        manga = manga,
+                                        selectionMode = state.isSelectionMode,
+                                        isSelected = manga.id in state.selectedMangaIds,
+                                        onClick = { onMangaClick(manga.id) },
+                                        onLongPress = { onMangaLongPress(manga.id) },
+                                        onSelectionToggle = { onMangaSelectionToggle(manga.id) },
+                                    )
+                                }
+                            }
                         }
                     }
                 }
