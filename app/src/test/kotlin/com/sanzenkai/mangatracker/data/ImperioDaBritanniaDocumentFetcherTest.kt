@@ -38,6 +38,27 @@ class ImperioDaBritanniaDocumentFetcherTest {
     }
 
     @Test
+    fun fetchesNumericMangaRoutesFromThePublicApiById() = runBlocking {
+        var apiUrl: String? = null
+        val chapterUrl = "https://imperiodabritannia.net/manga/1454/capitulo/185"
+        val fetcher = ImperioDaBritanniaDocumentFetcher(
+            htmlFetcher = htmlFetcher(),
+            jsonFetcher = JsonDocumentFetcher { url ->
+                apiUrl = url
+                JsonFetchResult.Success("""{"sucesso":true}""")
+            },
+        )
+
+        val result = fetcher.fetch(chapterUrl)
+
+        assertTrue(result is HtmlFetchResult.Success)
+        val document = (result as HtmlFetchResult.Success).document
+        assertEquals("https://api.imperiodabritannia.net/api/obras/1454", apiUrl)
+        assertEquals("application/json", document.contentType)
+        assertEquals(chapterUrl, document.pageUrl)
+    }
+
+    @Test
     fun keepsChapterLinkRegistrationAvailableWhenTheApiIsUnavailable() = runBlocking {
         val fetcher = ImperioDaBritanniaDocumentFetcher(
             htmlFetcher = htmlFetcher(),

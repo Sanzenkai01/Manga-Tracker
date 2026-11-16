@@ -6,7 +6,11 @@ import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
 import okhttp3.Dns
 import okhttp3.OkHttpClient
-import okhttp3.ResponseBody.Companion.toResponseBody
+import okhttp3.ResponseBody
+import okio.Buffer
+import okio.BufferedSource
+import okio.ForwardingSource
+import okio.buffer
 
 class SafePublicImageHttpClient(
     private val hostResolver: PublicHostResolver = DnsPublicHostResolver(),
@@ -60,19 +64,8 @@ class SafePublicImageHttpClient(
                     response.close()
                     throw IOException("The image response exceeds the configured size limit.")
                 }
-                val bytes = try {
-                    val source = body.source()
-                    if (source.request(maxResponseBytes + 1)) {
-                        response.close()
-                        throw IOException("The image response exceeds the configured size limit.")
-                    }
-                    source.readByteArray()
-                } catch (error: IOException) {
-                    response.close()
-                    throw error
-                }
                 response.newBuilder()
-                    .body(bytes.toResponseBody(body.contentType()))
+                    .body(BoundedImageResponseBody(body, maxResponseBytes))
                     .build()
             }
             .followSslRedirects(false)
@@ -82,9 +75,39 @@ class SafePublicImageHttpClient(
             .build()
 
     private companion object {
-        const val DEFAULT_MAX_RESPONSE_BYTES = 2L * 1024 * 1024
+        const val DEFAULT_MAX_RESPONSE_BYTES = 20L * 1024 * 1024
         const val CONNECT_TIMEOUT_SECONDS = 5L
-        const val READ_TIMEOUT_SECONDS = 5L
-        const val CALL_TIMEOUT_SECONDS = 10L
+        const val READ_TIMEOUT_SECONDS = 30L
+        const val CALL_TIMEOUT_SECONDS = 45L
+    }
+}
+
+private class BoundedImageResponseBody(
+    private val delegate: ResponseBody,
+    private val maxResponseBytes: Long,
+) : ResponseBody() {
+    private var bufferedSource: BufferedSource? = null
+
+    override fun contentType() = delegate.contentType()
+
+    override fun contentLength() = delegate.contentLength()
+
+    override fun source(): BufferedSource {
+        bufferedSource?.let { return it }
+        return object : ForwardingSource(delegate.source()) {
+            private var totalBytesRead = 0L
+
+            override fun read(sink: Buffer, byteCount: Long): Long {
+                val boundedByteCount = minOf(byteCount, maxResponseBytes - totalBytesRead + 1)
+                val bytesRead = super.read(sink, boundedByteCount)
+                if (bytesRead > 0) {
+                    totalBytesRead += bytesRead
+                    if (totalBytesRead > maxResponseBytes) {
+                        throw IOException("The image response exceeds the configured size limit.")
+                    }
+                }
+                return bytesRead
+            }
+        }.buffer().also { bufferedSource = it }
     }
 }

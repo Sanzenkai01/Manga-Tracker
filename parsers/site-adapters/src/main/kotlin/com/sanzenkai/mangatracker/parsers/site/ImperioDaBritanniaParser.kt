@@ -57,7 +57,7 @@ class ImperioDaBritanniaParser : SiteParser {
                 issue = SiteParseIssue.NO_MATCH,
             )
         val seriesUrl = PageMetadataExtractor.resolveHttpUrl(
-            "/manga/${path.slug}/",
+            "/manga/${path.identifier}/",
             document.pageUrl,
         )
         val chapter = path.chapter?.let { number ->
@@ -114,11 +114,16 @@ class ImperioDaBritanniaParser : SiteParser {
         if (!root.optBoolean("sucesso")) return invalidApiResponse()
         val work = root.optJSONObject("obra") ?: return invalidApiResponse()
         val mangaPath = mangaPath(document.pageUrl) ?: return invalidApiResponse()
-        val responseSlug = work.readString("slug") ?: return invalidApiResponse()
-        if (!responseSlug.equals(mangaPath.slug, ignoreCase = true)) return invalidApiResponse()
         val title = work.readString("nome") ?: return invalidApiResponse()
         val workId = work.readString("id")?.toLongOrNull()?.takeIf { it > 0L }
             ?: return invalidApiResponse()
+        val requestedId = mangaPath.identifier.toLongOrNull()
+        if (requestedId != null) {
+            if (workId != requestedId) return invalidApiResponse()
+        } else {
+            val responseSlug = work.readString("slug") ?: return invalidApiResponse()
+            if (!responseSlug.equals(mangaPath.identifier, ignoreCase = true)) return invalidApiResponse()
+        }
 
         val chapterItems = work.optJSONArray("capitulos") ?: return invalidApiResponse()
         if (chapterItems.length() !in 1..MAX_API_CHAPTERS) return invalidApiResponse()
@@ -148,11 +153,11 @@ class ImperioDaBritanniaParser : SiteParser {
             }
             val normalizedNumber = number.toPlainString()
             val sourceKey = if (chapterId > 0) "imperio-chapter:$chapterId" else {
-                "imperio:${mangaPath.slug}:$normalizedNumber"
+                "imperio:${mangaPath.identifier}:$normalizedNumber"
             }
             if (!chapterKeys.add(sourceKey)) return invalidApiResponse()
             val chapterUrl = PageMetadataExtractor.resolveHttpUrl(
-                "/manga/${mangaPath.slug}/capitulo/$normalizedNumber",
+                "/manga/${mangaPath.identifier}/capitulo/$normalizedNumber",
                 document.pageUrl,
             ) ?: return invalidApiResponse()
             val chapterLabel = item.readString("nome") ?: localizedMessage(
@@ -172,7 +177,7 @@ class ImperioDaBritanniaParser : SiteParser {
         val declaredCount = work.optInt("total_capitulos", -1)
         val isComplete = declaredCount > 0 && declaredCount == chapters.size
         val seriesUrl = PageMetadataExtractor.resolveHttpUrl(
-            "/manga/${mangaPath.slug}/",
+            "/manga/${mangaPath.identifier}/",
             document.pageUrl,
         ) ?: return invalidApiResponse()
         val latestChapter = chapters.firstOrNull() ?: return invalidApiResponse()
@@ -228,7 +233,7 @@ class ImperioDaBritanniaParser : SiteParser {
         }
         val match = MANGA_PATH_PATTERN.matchEntire(path) ?: return null
         return MangaPath(
-            slug = match.groupValues[1],
+            identifier = match.groupValues[1],
             chapter = match.groupValues[2].takeIf(String::isNotEmpty),
         )
     }
@@ -243,7 +248,7 @@ class ImperioDaBritanniaParser : SiteParser {
     }
 
     private data class MangaPath(
-        val slug: String,
+        val identifier: String,
         val chapter: String?,
     )
 
@@ -271,8 +276,14 @@ class ImperioDaBritanniaParser : SiteParser {
             } catch (_: URISyntaxException) {
                 return null
             }
-            val slug = API_MANGA_PATH_PATTERN.matchEntire(path)?.groupValues?.get(1) ?: return null
-            return "https://api.imperiodabritannia.net/api/obras/by-slug/$slug"
+            val identifier = API_MANGA_PATH_PATTERN.matchEntire(path)?.groupValues?.get(1) ?: return null
+            val workId = identifier.toLongOrNull()
+            return if (workId != null) {
+                if (workId <= 0L) return null
+                "https://api.imperiodabritannia.net/api/obras/$workId"
+            } else {
+                "https://api.imperiodabritannia.net/api/obras/by-slug/$identifier"
+            }
         }
     }
 }

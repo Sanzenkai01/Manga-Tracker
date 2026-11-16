@@ -5,6 +5,7 @@ import java.net.InetAddress
 import okhttp3.Request
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okio.Buffer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -21,15 +22,19 @@ class SafePublicImageHttpClientTest {
             server.enqueue(
                 MockResponse()
                     .setHeader("Content-Type", "image/png")
-                    .setBody("image-is-too-large"),
+                    .setChunkedBody("image-is-too-large", 4),
             )
             val client = imageClient(server, maxResponseBytes = 8)
 
             val response = client.newCall(Request.Builder().url(server.url("/small")).build()).execute()
-            assertEquals("image", response.body?.string())
+            response.use {
+                assertEquals("image", it.body?.string())
+            }
 
             val oversized = try {
-                client.newCall(Request.Builder().url(server.url("/large")).build()).execute()
+                client.newCall(Request.Builder().url(server.url("/large")).build()).execute().use {
+                    it.body?.bytes()
+                }
                 false
             } catch (_: IOException) {
                 true
@@ -37,6 +42,25 @@ class SafePublicImageHttpClientTest {
 
             assertTrue(oversized)
             assertEquals(2, server.requestCount)
+        }
+    }
+
+    @Test
+    fun downloadsImagesLargerThanTwoMegabytesWithinTheDefaultBound() {
+        MockWebServer().use { server ->
+            val imageBytes = ByteArray(3 * 1024 * 1024) { 1 }
+            server.enqueue(
+                MockResponse()
+                    .setHeader("Content-Type", "image/png")
+                    .setBody(Buffer().write(imageBytes)),
+            )
+            val client = imageClient(server)
+
+            val response = client.newCall(Request.Builder().url(server.url("/large-cover")).build()).execute()
+            response.use {
+                assertEquals(imageBytes.size, it.body?.bytes()?.size)
+            }
+            assertEquals(1, server.requestCount)
         }
     }
 
@@ -111,18 +135,28 @@ class SafePublicImageHttpClientTest {
 
     private fun imageClient(
         server: MockWebServer,
-        maxResponseBytes: Long,
-    ) = SafePublicImageHttpClient(
-        hostResolver = PublicHostResolver { host ->
+        maxResponseBytes: Long? = null,
+    ): okhttp3.OkHttpClient {
+        val resolver = PublicHostResolver { host ->
             if (host.equals(server.url("/").host, ignoreCase = true)) {
                 InetAddress.getAllByName(host).toList()
             } else {
                 null
             }
-        },
-        isAllowedPort = { it == server.url("/").port },
-        maxResponseBytes = maxResponseBytes,
-    ).create()
+        }
+        return if (maxResponseBytes == null) {
+            SafePublicImageHttpClient(
+                hostResolver = resolver,
+                isAllowedPort = { it == server.url("/").port },
+            ).create()
+        } else {
+            SafePublicImageHttpClient(
+                hostResolver = resolver,
+                isAllowedPort = { it == server.url("/").port },
+                maxResponseBytes = maxResponseBytes,
+            ).create()
+        }
+    }
 
     private fun assertRequestFails(client: okhttp3.OkHttpClient, url: String) {
         val failed = try {

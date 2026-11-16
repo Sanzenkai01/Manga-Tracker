@@ -409,6 +409,67 @@ class SiteSampleParserTest {
     }
 
     @Test
+    fun imperioPublicApiResolvesNumericMangaRoutesById() {
+        val result = ImperioDaBritanniaParser().parse(
+            ParserDocument(
+                pageUrl = "https://imperiodabritannia.net/manga/1454/capitulo/185",
+                contentType = "application/json",
+                html = """
+                    {
+                      "sucesso": true,
+                      "obra": {
+                        "id": 1454,
+                        "nome": "Vingança do Cão de Caça dos Baskerville",
+                        "imagem": "obras/1454/cover.jpg",
+                        "total_capitulos": 189,
+                        "slug": "vinganca-do-cao-de-caca-dos-baskerville",
+                        "capitulos": [
+                          {"id": 18501, "obra_id": 1454, "numero": "188.00", "nome": "Capítulo 188"},
+                          {"id": 18502, "obra_id": 1454, "numero": "189.00", "nome": "Capítulo 189"}
+                        ]
+                      }
+                    }
+                """.trimIndent(),
+            ),
+        )
+
+        assertTrue(result is SiteParseResult.Success)
+        val page = (result as SiteParseResult.Success).page
+        assertEquals("Vingança do Cão de Caça dos Baskerville", page.title)
+        assertEquals(
+            "https://imperiodabritannia.net/manga/1454/",
+            page.seriesUrl,
+        )
+        assertEquals("Capítulo 189", page.currentChapter?.label)
+        assertEquals(
+            listOf(
+                "https://imperiodabritannia.net/manga/1454/capitulo/189",
+                "https://imperiodabritannia.net/manga/1454/capitulo/188",
+            ),
+            page.chapters.map { it.url },
+        )
+        assertEquals(
+            "https://cdn.imperiodabritannia.net/obras/1454/cover.jpg",
+            page.originalCoverUrl,
+        )
+        assertTrue(page.isLatestChapterKnown)
+        assertFalse(page.isChapterListComplete)
+    }
+
+    @Test
+    fun imperioPublicApiRejectsNumericRouteWhenResponseHasAnotherWorkId() {
+        val result = ImperioDaBritanniaParser().parse(
+            ParserDocument(
+                pageUrl = "https://imperiodabritannia.net/manga/1454/",
+                contentType = "application/json",
+                html = fixture("fixtures/imperiodabritannia-api.json"),
+            ),
+        )
+
+        assertTrue(result is SiteParseResult.Failure)
+    }
+
+    @Test
     fun imperioParserRejectsApiDataForAnotherManga() {
         val wrongManga = fixture("fixtures/imperiodabritannia-api.json")
             .replace(
@@ -469,6 +530,12 @@ class SiteSampleParserTest {
             "https://api.imperiodabritannia.net/api/obras/by-slug/eu-me-tornei-um-homem-casado-em-outro-mundo",
             ImperioDaBritanniaParser.apiUrlForPage(
                 "https://imperiodabritannia.net/manga/eu-me-tornei-um-homem-casado-em-outro-mundo/capitulo/34",
+            ),
+        )
+        assertEquals(
+            "https://api.imperiodabritannia.net/api/obras/1454",
+            ImperioDaBritanniaParser.apiUrlForPage(
+                "https://imperiodabritannia.net/manga/1454/capitulo/185",
             ),
         )
         assertEquals(

@@ -2,6 +2,10 @@
 
 **Last updated:** 2026-11-16
 
+**Large cover images (2026-11-16):** Two Império da Britannia PNG covers were verified to return HTTP 200 with sizes of 12.3 MB and 18.0 MB; the app's image client previously rejected responses above 2 MiB. Image loading now streams responses within a 20 MiB cap and allows longer transfer timeouts. Core data tests, app lint, and debug assembly passed; rendering on the user's device remains unverified.
+
+**Império da Britannia numeric routes (2026-11-16):** Numeric manga paths such as `/manga/1454/capitulo/185` now use the public API's by-ID endpoint and validate the returned work ID; slug paths continue using the by-slug endpoint. The public API response for ID 1454 was verified to identify "Vingança do Cão de Caça dos Baskerville" and return 189 chapters. Parser/fetcher tests and a debug build passed; in-app refresh remains unverified.
+
 **CI and release preparation (2026-11-16):** Added a GitHub Actions workflow for the requested JDK 17 test/lint/debug-build matrix; the workflow makes `gradlew` executable without changing its tracked Git mode. Release minification and resource shrinking are enabled, and an adaptive launcher icon with a monochrome layer is configured. Android cloud backup and device transfer are explicitly disabled; the app's manual JSON backup remains available. The requested CI matrix, `:app:assembleRelease`, and post-policy debug/release builds and lint completed successfully locally; the release APK is unsigned. The tracked source ZIP and root PNG remain untouched pending approval.
 
 **Notification grouping (2026-11-16):** A single new chapter keeps the existing notification. Two or more chapters detected for one manga in the same check are delivered as one cover-capable notification with the newest chapter link and a list-scoped “mark as read” action. The publisher returns every chapter ID in a posted group for delivery timestamps; canceling one chapter updates the group (or converts the last one to a single notification), while removing a manga still cancels its notifications. The general summary remains limited to two or more distinct manga.

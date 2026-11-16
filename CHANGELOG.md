@@ -2,6 +2,33 @@
 
 Project changes are recorded here. Entries describe repository changes, not planned or unverified app behavior.
 
+## 2026-11-16 — Carregando capas PNG grandes
+
+### Alterações
+
+- O cliente de imagens da biblioteca rejeitava capas acima de 2 MiB. As capas públicas de "O Começo Depois do Fim" (18.027.756 bytes) e "O Exilado Cavaleiro Pesado Reencarnado" (12.320.057 bytes) excediam esse limite.
+- O limite continua explícito e limitado, agora em 20 MiB. As respostas são verificadas durante o streaming, evitando bufferizar a imagem inteira antes de o Coil decodificá-la. Os timeouts de leitura/transferência também foram ampliados para imagens grandes; validações de host, esquema e porta foram preservadas.
+
+### Verificação
+
+- Os endpoints das duas imagens responderam a `HEAD` com HTTP 200 e `Content-Type: image/png`; tamanhos informados de 18.027.756 e 12.320.057 bytes.
+- Passou: `.\gradlew.bat :core:data:testDebugUnitTest :app:lintDebug :app:assembleDebug` — **BUILD SUCCESSFUL**. O teste confirma o carregamento de resposta acima de 2 MiB e a rejeição de corpo chunked acima do limite configurado.
+- A renderização das duas capas no dispositivo do usuário não foi verificada nesta tarefa.
+
+## 2026-11-16 — Corrigindo rotas numéricas do Império da Britannia
+
+### Alterações
+
+- Páginas `/manga/{id}` agora consultam `/api/obras/{id}` e validam se o ID retornado corresponde à URL. Rotas com slug continuam usando `/api/obras/by-slug/{slug}`.
+- A URL de série e os links dos capítulos preservam o identificador da rota, incluindo IDs numéricos. Foram adicionados testes para o ID 1454, rejeição de resposta de outra obra e seleção do endpoint no fetcher.
+
+### Verificação
+
+- Confirmado no endpoint público: `GET https://api.imperiodabritannia.net/api/obras/1454` com `X-NoEncryptionBritta: 1` retornou o ID 1454, slug `vinganca-do-cao-de-caca-dos-baskerville` e 189 capítulos; o endpoint `by-slug/1454` retornou HTTP 404.
+- Passou: `.\gradlew.bat :parsers:site-adapters:test :app:testDebugUnitTest` — **BUILD SUCCESSFUL**.
+- Passou: `.\gradlew.bat :app:assembleDebug` — **BUILD SUCCESSFUL**. Os comandos foram executados com JDK 17 e Android SDK definidos no ambiente do processo.
+- A atualização automática ainda não foi verificada no app ou em dispositivo.
+
 ## 2026-11-16 — Agrupando notificações por mangá
 
 ### Alterações
