@@ -11,7 +11,8 @@ import com.sanzenkai.mangatracker.core.domain.model.MangaMetadataUpdate
 import com.sanzenkai.mangatracker.core.domain.model.MangaBackupSnapshot
 import com.sanzenkai.mangatracker.core.domain.model.MangaRegistrationResult
 import com.sanzenkai.mangatracker.core.domain.model.MangaSummary
-import com.sanzenkai.mangatracker.monitoring.MangaCheckResult
+import com.sanzenkai.mangatracker.core.domain.model.MonitoringInterval
+import com.sanzenkai.mangatracker.core.domain.model.MonitoringProblemSignals
 import com.sanzenkai.mangatracker.core.domain.model.MonitoringSettings
 import com.sanzenkai.mangatracker.core.domain.model.ReadingAction
 import com.sanzenkai.mangatracker.core.domain.model.ReadingActionOrigin
@@ -21,6 +22,7 @@ import com.sanzenkai.mangatracker.core.domain.model.TrackedChapter
 import com.sanzenkai.mangatracker.core.domain.model.ValidatedChapterSnapshot
 import com.sanzenkai.mangatracker.core.domain.repository.MangaRepository
 import com.sanzenkai.mangatracker.core.domain.repository.LibraryPreferencesRepository
+import com.sanzenkai.mangatracker.monitoring.MangaCheckResult
 import com.sanzenkai.mangatracker.monitoring.MonitoringScheduler
 import com.sanzenkai.mangatracker.notifications.ChapterNotificationPublisher
 import kotlinx.coroutines.CompletableDeferred
@@ -51,6 +53,46 @@ import org.junit.runner.Description
 class LibraryViewModelTest {
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
+
+    @Test
+    fun stateTracksWhetherAnyMangaHasMonitoringEnabled() = runTest {
+        val library = MutableStateFlow(
+            listOf(
+                MangaSummary(
+                    id = "manga-1",
+                    title = "Manga One",
+                    originalCoverUrl = null,
+                    monitoringEnabled = true,
+                ),
+            ),
+        )
+        val viewModel = LibraryViewModel(
+            TestMangaRepository(library),
+            TestLibraryPreferencesRepository,
+            checkMonitoredManga = { error("Not used in this test") },
+        )
+        val store = ViewModelStore().apply { put("library", viewModel) }
+        val job = launch(StandardTestDispatcher(testScheduler)) {
+            viewModel.uiState.collect()
+        }
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.hasMonitoredManga)
+
+        library.value = listOf(
+            MangaSummary(
+                id = "manga-2",
+                title = "Manga Two",
+                originalCoverUrl = null,
+                monitoringEnabled = false,
+            ),
+        )
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.hasMonitoredManga)
+        job.cancel()
+        store.clear()
+    }
 
     @Test
     fun repositoryFailureIsPublishedInsteadOfAnEmptySuccess() = runTest {
@@ -305,6 +347,9 @@ class LibraryViewModelTest {
         override fun observeCheckAttempts(mangaId: String): Flow<List<CheckAttempt>> =
             emptyFlow()
 
+        override fun observeMonitoringProblem(mangaId: String): Flow<MonitoringProblemSignals> =
+            flowOf(MonitoringProblemSignals.empty(mangaId))
+
         override suspend fun recordCheckAttempt(attempt: CheckAttempt) =
             error("Not used in this test")
     }
@@ -317,6 +362,11 @@ class LibraryViewModelTest {
         override fun observeThemeMode(): Flow<AppThemeMode> = flowOf(AppThemeMode.SYSTEM)
 
         override suspend fun setThemeMode(themeMode: AppThemeMode) = Unit
+
+        override fun observeMonitoringInterval(): Flow<MonitoringInterval> =
+            flowOf(MonitoringInterval.DEFAULT)
+
+        override suspend fun setMonitoringInterval(interval: MonitoringInterval) = Unit
     }
 
     private class RecordingMonitoringScheduler : MonitoringScheduler {

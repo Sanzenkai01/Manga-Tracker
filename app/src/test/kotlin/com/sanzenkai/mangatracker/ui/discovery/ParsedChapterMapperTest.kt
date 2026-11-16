@@ -7,6 +7,26 @@ import org.junit.Test
 
 class ParsedChapterMapperTest {
     @Test
+    fun prioritizesChapterMarkersAndRejectsLetterSuffixes() {
+        val cases = listOf(
+            "Solo Leveling 2 - Chapter 45" to "45",
+            "Chapter 5v2" to "5",
+            "Capítulo 100 END" to "100",
+        )
+
+        cases.forEach { (label, expected) ->
+            val chapter = ParsedChapter(
+                sourceKey = label,
+                label = label,
+                url = "https://example.test/chapter",
+                publishedAtEpochMillis = null,
+            ).toDiscoveredChapter()
+
+            assertEquals(expected, chapter.normalizedNumber)
+        }
+    }
+
+    @Test
     fun preservesDecimalNumberAndClassifiesSpecialAndExtraLabels() {
         val decimal = ParsedChapter(
             sourceKey = "decimal",

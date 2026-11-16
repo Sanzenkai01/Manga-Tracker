@@ -6,12 +6,15 @@ import com.sanzenkai.mangatracker.core.data.network.HtmlDocumentFetcher
 import com.sanzenkai.mangatracker.core.data.network.HtmlFetchFailureCode
 import com.sanzenkai.mangatracker.core.data.network.HtmlFetchResult
 import com.sanzenkai.mangatracker.core.domain.model.CheckAttempt
+import com.sanzenkai.mangatracker.core.domain.model.DiscoveredChapter
 import com.sanzenkai.mangatracker.core.domain.model.Manga
 import com.sanzenkai.mangatracker.core.domain.model.MangaMetadataUpdate
 import com.sanzenkai.mangatracker.core.domain.model.ValidatedChapterSnapshot
+import com.sanzenkai.mangatracker.core.domain.model.calculateLatestChapterDelta
 import com.sanzenkai.mangatracker.core.domain.repository.MangaRepository
+import com.sanzenkai.mangatracker.core.domain.repository.NoOpSiteProblemNotificationRepository
+import com.sanzenkai.mangatracker.core.domain.repository.SiteProblemNotificationRepository
 import com.sanzenkai.mangatracker.core.localization.localizedMessage
-import com.sanzenkai.mangatracker.core.parser.api.ParsedChapter
 import com.sanzenkai.mangatracker.core.parser.api.ParsedSitePage
 import com.sanzenkai.mangatracker.core.parser.api.SiteParseResult
 import com.sanzenkai.mangatracker.core.parser.engine.DomainNormalizer
@@ -21,6 +24,7 @@ import com.sanzenkai.mangatracker.core.parser.engine.ManualSiteConfigurationCode
 import com.sanzenkai.mangatracker.core.parser.engine.SiteDiscoveryEngine
 import com.sanzenkai.mangatracker.notifications.ChapterNotificationPublisher
 import com.sanzenkai.mangatracker.notifications.NoOpChapterNotificationPublisher
+import java.io.IOException
 import com.sanzenkai.mangatracker.ui.discovery.toDiscoveredChapter
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -41,6 +45,8 @@ class MangaCheckCoordinator(
     private val parserDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val minimumSameHostRequestIntervalMillis: Long = DEFAULT_HOST_REQUEST_INTERVAL_MILLIS,
     private val notificationPublisher: ChapterNotificationPublisher = NoOpChapterNotificationPublisher,
+    private val siteProblemNotificationRepository: SiteProblemNotificationRepository =
+        NoOpSiteProblemNotificationRepository,
 ) {
     private val mangaLocks = ConcurrentHashMap<String, Mutex>()
     private val hostLocks = ConcurrentHashMap<String, Mutex>()
@@ -178,6 +184,7 @@ class MangaCheckCoordinator(
                                 page.isChapterListComplete && !page.isLatestChapterKnown ->
                                     (page.chapters + listOfNotNull(page.currentChapter))
                                         .distinctBy { it.sourceKey }
+                                        .map { it.toDiscoveredChapter() }
                                 page.isLatestChapterKnown ->
                                     findLatestChapterDelta(mangaId, page)
                                 else -> null
@@ -205,7 +212,7 @@ class MangaCheckCoordinator(
                                         ),
                                     )
                                 }
-                                val chapters = chapterDelta.map { it.toDiscoveredChapter() }
+                                val chapters = chapterDelta
                                 val finishedAt = clock()
                                 val attempt = CheckAttempt(
                                     id = idGenerator(),
@@ -231,6 +238,7 @@ class MangaCheckCoordinator(
                                     },
                                     attempt = attempt,
                                 )
+                                notificationPublisher.clearSiteMonitoringProblem(mangaId)
                                 publishPendingChapterNotifications(
                                     mangaId = mangaId,
                                     manga = mangaForNotifications,
@@ -296,27 +304,13 @@ class MangaCheckCoordinator(
     private suspend fun findLatestChapterDelta(
         mangaId: String,
         page: ParsedSitePage,
-    ): List<ParsedChapter>? {
+    ): List<DiscoveredChapter>? {
         val observedChapters = (page.chapters + listOfNotNull(page.currentChapter))
-            .distinctBy { it.sourceKey }
+            .map { it.toDiscoveredChapter() }
         if (observedChapters.isEmpty()) return null
 
         val savedChapters = mangaRepository.observeChapters(mangaId).first()
-        val savedKeys = savedChapters.mapTo(mutableSetOf()) { it.sourceChapterKey }
-        val newestSavedIndex = observedChapters.indexOfFirst { it.sourceKey in savedKeys }
-        if (newestSavedIndex >= 0) return observedChapters.take(newestSavedIndex)
-
-        val latestSavedNumber = savedChapters.mapNotNull { chapter ->
-            chapter.normalizedNumber?.toBigDecimalOrNull()
-        }.maxOrNull() ?: return null
-        val numberedChapters = observedChapters.map { chapter ->
-            val number = chapter.toDiscoveredChapter().normalizedNumber?.toBigDecimalOrNull()
-                ?: return null
-            chapter to number
-        }
-        return numberedChapters
-            .filter { (_, number) -> number > latestSavedNumber }
-            .map { (chapter, _) -> chapter }
+        return calculateLatestChapterDelta(observedChapters, savedChapters)
     }
 
     private suspend fun isMonitoringEnabled(mangaId: String): Boolean =
@@ -397,7 +391,7 @@ class MangaCheckCoordinator(
         } else {
             OUTCOME_FAILURE
         }
-        return try {
+        try {
             mangaRepository.recordCheckAttempt(
                 CheckAttempt(
                     id = idGenerator(),
@@ -409,16 +403,9 @@ class MangaCheckCoordinator(
                     errorCode = errorCode,
                 ),
             )
-            MangaCheckResult.Failure(
-                mangaId = mangaId,
-                normalizedHost = normalizedHost,
-                errorCode = errorCode,
-                message = message,
-                retryable = retryable,
-            )
         } catch (error: SQLiteException) {
             Log.e(TAG, "Could not record the manga check failure.", error)
-            MangaCheckResult.Failure(
+            return MangaCheckResult.Failure(
                 mangaId = mangaId,
                 normalizedHost = normalizedHost,
                 errorCode = ERROR_LOCAL_STORAGE,
@@ -428,6 +415,37 @@ class MangaCheckCoordinator(
                 ),
                 retryable = true,
             )
+        }
+        try {
+            notifySiteMonitoringProblemIfNeeded(mangaId)
+        } catch (error: SQLiteException) {
+            Log.e(TAG, "Could not read the site's monitoring problem status.", error)
+        } catch (error: IOException) {
+            Log.e(TAG, "Could not save the site's monitoring notification state.", error)
+        } catch (error: SecurityException) {
+            Log.w(TAG, "Android denied posting the site monitoring problem notification.", error)
+        }
+        return MangaCheckResult.Failure(
+            mangaId = mangaId,
+            normalizedHost = normalizedHost,
+            errorCode = errorCode,
+            message = message,
+            retryable = retryable,
+        )
+    }
+
+    private suspend fun notifySiteMonitoringProblemIfNeeded(mangaId: String) {
+        if (!isMonitoringEnabled(mangaId)) return
+
+        val signals = mangaRepository.observeMonitoringProblem(mangaId).first()
+        if (!signals.isProblem(clock())) return
+        val episodeId = signals.episodeId ?: return
+        val manga = mangaRepository.observeManga(mangaId).first() ?: return
+        if (!notificationPublisher.canPostSiteProblemNotifications()) return
+        if (!siteProblemNotificationRepository.claimEpisodeNotification(mangaId, episodeId)) return
+
+        if (!notificationPublisher.publishSiteMonitoringProblem(manga, episodeId)) {
+            Log.w(TAG, "The site monitoring problem notification could not be posted.")
         }
     }
 

@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -60,6 +61,9 @@ fun SiteDiscoveryScreen(
     onTestConfiguration: () -> Unit,
     onSaveConfiguration: () -> Unit,
     onRegisterManga: () -> Unit,
+    showNotificationPermissionRationale: Boolean,
+    onRequestNotificationPermission: () -> Unit,
+    onDismissNotificationPermissionRationale: () -> Unit,
     onMangaRegistered: (String) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -152,6 +156,27 @@ fun SiteDiscoveryScreen(
                         } else {
                             Text(stringResource(R.string.site_analyze_button))
                         }
+                    }
+                    if (showNotificationPermissionRationale) {
+                        AlertDialog(
+                            onDismissRequest = onDismissNotificationPermissionRationale,
+                            title = {
+                                Text(stringResource(R.string.notification_permission_rationale_title))
+                            },
+                            text = {
+                                Text(stringResource(R.string.notification_permission_rationale_message))
+                            },
+                            confirmButton = {
+                                TextButton(onClick = onRequestNotificationPermission) {
+                                    Text(stringResource(R.string.notification_permission_rationale_continue))
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = onDismissNotificationPermissionRationale) {
+                                    Text(stringResource(R.string.notification_permission_rationale_not_now))
+                                }
+                            },
+                        )
                     }
                 }
             }

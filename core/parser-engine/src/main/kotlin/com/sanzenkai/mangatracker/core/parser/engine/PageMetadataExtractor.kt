@@ -356,7 +356,7 @@ object PageMetadataExtractor {
         return hasClientRoot && hasModuleScript && document.body().text().isBlank()
     }
 
-    private fun findChapterIdentity(value: String): Pair<String, String>? {
+    internal fun findChapterIdentity(value: String): Pair<String, String>? {
         val searchableValue = try {
             URI(value).path?.takeIf(String::isNotEmpty) ?: value
         } catch (_: URISyntaxException) {
@@ -485,7 +485,7 @@ object PageMetadataExtractor {
             true
         }
 
-    private fun chapterSeriesKey(rawUrl: String): String? {
+    internal fun chapterSeriesKey(rawUrl: String): String? {
         val uri = try {
             URI(rawUrl).normalize()
         } catch (_: URISyntaxException) {

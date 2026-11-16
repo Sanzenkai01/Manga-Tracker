@@ -21,13 +21,13 @@ com.sanzenkai.mangatracker
 ├── app/                         # Application, Activity e composição de dependências
 ├── navigation/                  # Grafo, rotas e argumentos de navegação
 ├── data/                        # Container e composição manual de dependências
+├── monitoring/                  # Scheduler, workers e coordenação de checagem
+├── notifications/               # Canal, ações, capa e agrupamento
 └── ui/
     ├── discovery/               # Tela de descoberta e ViewModel
     ├── library/                 # Tela inicial, estado e ViewModel
     ├── details/                 # Detalhes, capítulos e ações de leitura/monitoramento
     ├── settings/                # Preferências e permissões de notificação
-    ├── monitoring/              # Scheduler, workers e coordenação de checagem
-    ├── notifications/           # Canal, ações, capa e agrupamento
     └── theme/                   # Tema Material 3
 
 com.sanzenkai.mangatracker.core.domain
@@ -66,9 +66,9 @@ Os módulos abaixo foram criados para permitir evolução sem acoplar o app a ca
 | --- | --- | --- |
 | `:app` | **Implementado parcialmente:** Application, Activity, tema, biblioteca lista/grade, cadastro validado, detalhe/capítulos, ações explícitas de leitura, refresh manual, descoberta, WorkManager e notifications. Testes JVM e build passam; validação em dispositivo está pendente. | APIs de `:core:domain`, `:core:data`, `:core:parser-api`, `:core:parser-engine` e adapters. |
 | `:core:domain` | **Implementado parcialmente:** modelos locais de manga/capítulo, estado/histórico de leitura, configuração, monitoramento e tentativas; contratos de repositório, preferência `LibraryLayout` e fronteira de snapshot validado. Casos de uso e fluxos de UI pendentes. | Kotlin; não depende de Android, Room, Compose, Jsoup ou OkHttp. |
-| `:core:data` | **Implementado parcialmente:** schema Room v2, repository, DataStore, `SafeHtmlFetcher`, `SafeCoverImageFetcher` e `SafePublicImageHttpClient` com limites, validação de host público/DNS pinning e política de redirecionamento. | `:core:domain`, Room, DataStore, Coroutines e OkHttp. |
+| `:core:data` | **Implementado parcialmente:** schema Room v3, repository, DataStore, `SafeHtmlFetcher`, `SafeCoverImageFetcher` e `SafePublicImageHttpClient` com limites, validação de host público/DNS pinning e política de redirecionamento. | `:core:domain`, Room, DataStore, Coroutines e OkHttp. |
 | `:core:parser-api` | **Implementado:** documento, metadados, capítulo, completude, issues e resultado tipado; sem dependência de Jsoup ou Android. | Kotlin. |
-| `:core:parser-engine` | **Implementado parcialmente:** registry, descoberta genérica, JSON-LD/HTML, configuração manual CSS/regex, validação e limites para listas incompletas. | `:core:parser-api`, Jsoup, JSON e RE2/J. |
+| `:core:parser-engine` | **Implementado parcialmente:** registry, descoberta genérica, JSON-LD/HTML, configuração manual CSS/regex, parsing de janelas recentes RSS/Atom e limites para listas incompletas. | `:core:parser-api`, Jsoup, JSON e RE2/J. |
 | `:parsers:site-adapters` | **Implementado parcialmente:** adapter HiveToons baseado em campos observados; fixture dinâmica de Imperio usada para validar detecção genérica. Nenhum site é declarado completo. | `:core:parser-api` e utilitários públicos do engine. |
 
 Direção: `:app` compõe os módulos; `:core:data` implementa contratos do domínio e fornece a aquisição HTTP; engine e adapters dependem da API de parsing, nunca do app. O engine não importa implementações de sites. O ponto de composição registra um conjunto de `SiteParser`s (por injeção de dependência ou registro explícito), para que incluir um adapter não exija alterar o orquestrador.
@@ -77,7 +77,7 @@ As telas e ViewModels começam organizados por feature dentro de `:app`, não co
 
 ## 3. Entidades Room
 
-Room é a fonte de verdade do catálogo, capítulos, estados de leitura, configurações de site e resultados de monitoramento. O schema atual é v2; a migration v1→v2 renomeia as tabelas de configuração e monitoramento sem descartar linhas e adiciona o índice de ordenação dos capítulos por manga.
+Room é a fonte de verdade do catálogo, capítulos, estados de leitura, configurações de site e resultados de monitoramento. O schema atual é v3. As migrations v1→v2 e v2→v3 preservam os registros existentes; a primeira renomeia as tabelas de configuração e monitoramento e adiciona o índice de ordenação dos capítulos, e a segunda cria a fila de notificações pendentes.
 
 | Entidade | Campos/responsabilidade principais | Relações e índices |
 | --- | --- | --- |
@@ -90,6 +90,8 @@ Room é a fonte de verdade do catálogo, capítulos, estados de leitura, configu
 | `CheckAttemptEntity` | ID da tentativa, manga, tipo manual/periódico, início/fim, outcome tipado e código diagnóstico seguro. | FK e índice `(mangaId, startedAt)`; guardar diagnóstico, não HTML bruto completo. |
 | Preferência DataStore | Preferência lista/grade e modo de tema (`SYSTEM`, `LIGHT`, `DARK`). | Repositório conectado à biblioteca e à tela de configurações; o tema segue o sistema por padrão. |
 
+O estado de “monitoramento com problema” é derivado das tentativas, sem coluna nem migração Room: cinco falhas consecutivas com resposta do servidor ou parsing inválido, ou mais de três dias desde o último sucesso quando existe uma falha elegível. Falhas de rede e de configuração não contam como falhas do site. A consulta considera apenas falhas posteriores ao sucesso mais recente. Um marcador DataStore por mangá/episódio evita repetir a notificação; sucesso encerra o aviso ativo e permite um episódio futuro.
+
 Índices iniciais estão declarados nas entidades e devem ser reavaliados com as consultas reais. Números decimais não devem depender de `REAL` com arredondamento; armazenar o rótulo de origem e a representação decimal normalizada sem perda. Para especiais/extras, manter chave/tipo próprios; ordem incerta não deve ser inferida.
 
 Não excluir capítulos antigos por ausência em uma resposta. Migrações Room devem ser explícitas, registradas e testadas; nenhuma entidade de histórico pode ser apagada em cascata por conveniência. Política de remoção de mangá ainda requer decisão de produto e preservação do histórico.
@@ -97,15 +99,16 @@ Não excluir capítulos antigos por ausência em uma resposta. Migrações Room 
 ## 4. DAOs
 
 - **Implementados:** DAOs de manga, capítulo, estado/histórico de leitura, configuração por host, configurações individuais de monitoramento e tentativas. Incluem consultas observáveis, contagem de não lidos, inserção idempotente e atualização de metadados de capítulo sem tocar no estado de leitura.
+- **Implementado e testado:** a consulta Room projeta sinais de saúde por manga a partir de `check_attempt`, ignorando falhas de rede e delimitando a sequência pelo sucesso mais recente.
 - **Implementado:** estado atual e evento de histórico são gravados na mesma transação; inserir capítulos novos grava o estado inicial como não lido. Consultas de capítulos não alteram leitura.
-- **Implementado e testado:** migration Room v1→v2 registrada; teste verifica preservação de manga, capítulo, leitura, histórico, configurações e tentativas.
+- **Implementado e testado:** migrations Room v1→v2 e v2→v3 registradas; os testes verificam preservação dos dados existentes e criação da fila de notificações pendentes.
 - As preferências de lista/grade e tema são fornecidas pelo repositório DataStore, sem `AppSettingsDao`. A ausência de valor de tema resolve para seguir o sistema.
 
 Queries observáveis usam `Flow`; escritas usam `suspend`. Somente um snapshot de capítulos já validado deve chegar à reconciliação local; uma falha de parsing/rede não pode ser representada por uma lista vazia bem-sucedida.
 
 ## 5. Repositórios e fluxos de domínio
 
-- **Implementado e testado:** `RoomMangaRepository` persiste/observa mangas, reconcilia capítulos idempotentemente, calcula não lidos, salva configurações por host, gerencia estado individual de monitoramento e registra tentativas.
+- **Implementado e testado:** `RoomMangaRepository` persiste/observa mangas, reconcilia capítulos idempotentemente, calcula não lidos e estado derivado do monitoramento, salva configurações por host, gerencia estado individual de monitoramento e registra tentativas.
 - **Implementado:** `setChapterReadState` é a única operação de repositório que altera o estado de leitura; apenas transições reais registram histórico, junto ao novo estado na mesma transação. Abrir ou observar capítulos não marca como lido.
 - **Implementado:** `ValidatedChapterSnapshot` rejeita resultado de parser incompleto antes de persistência; snapshot vazio completo é permitido e não remove capítulos anteriormente salvos.
 - **Implementado:** `registerManga` cadastra o manga e um snapshot completo em transação, evita duplicar série e inicializa monitoramento ativo para iniciar as verificações automáticas.
@@ -123,7 +126,7 @@ Casos de uso centrais: cadastrar por link, descobrir/configurar fonte, verificar
 
 - **`LibraryViewModel` (implementado):** coleta a projeção da biblioteca, altera a preferência persistida de lista/grade e publica estados de loading/erro/vazio.
 - **Cadastro por URL (`SiteDiscoveryViewModel`):** analisa o link e mostra a prévia. Quando o título, a série e o capítulo do link forem identificados, permite cadastrar esse capítulo mesmo que a lista da série esteja incompleta. Somente resultados completos são aceitos nas verificações e reconciliações posteriores.
-- **`MangaDetailViewModel` (implementado):** observa manga/capítulos/status, marca leitura apenas por ação explícita, atualiza manualmente e sincroniza pausa/retomada com o scheduler individual.
+- **`MangaDetailViewModel` (implementado):** observa manga/capítulos/status, apresenta estado de problema do monitoramento, marca leitura apenas por ação explícita, atualiza manualmente e sincroniza pausa/retomada com o scheduler individual.
 - **`SettingsViewModel` (implementado):** observa e altera as preferências persistidas de lista/grade e tema.
 - **`SiteDiscoveryViewModel` (implementado):** controla fetch, parser, prévia, regras CSS/regex, validação e salvamento por hostname; falhas e listas incompletas não chegam à reconciliação.
 
@@ -131,7 +134,7 @@ Os ViewModels usam repositórios e não acessam Room diretamente. A atualizaçã
 
 ## 7. Telas Compose
 
-1. **Biblioteca (implementada):** lista ou grade adaptável, preferência DataStore, capas via Coil, capítulo mais recente, não lidos, última verificação e status salvo.
+1. **Biblioteca (implementada):** lista ou grade adaptável, preferência DataStore, capas via Coil, capítulo mais recente, não lidos, última verificação e selo quando o monitoramento de um mangá apresenta falhas de site/parsing.
 2. **Cadastro por URL (implementado no assistente):** campo do capítulo, loading/erro/prévia e confirmação quando o parse identifica título, série e capítulo do link. Se a lista completa não for identificada, cadastra somente o capítulo conhecido; verificações futuras ainda exigem uma lista completa ou configuração testada.
 3. **Detalhe da série (implementado):** capa/título/série, capítulos, estado de leitura, contagem não lida, última verificação/sucesso, atualização manual e preferência individual de monitoramento. Abrir URL e marcar leitura são ações independentes.
 4. **Assistente de site (implementado):** campo URL, prévia, regras CSS/regex, teste e salvamento por hostname. Edição/listagem dedicada das configurações segue pendente.
@@ -143,7 +146,7 @@ Todos os estados de conexão, bloqueio, indisponibilidade, HTML inválido e cont
 
 Navigation Compose configura `library`, `site-discovery`, `manga/{mangaId}` e `settings`. Cadastro é uma ação do assistente, não uma rota separada. Edição/listagem dedicada de configurações ainda é futura. Passar IDs/argumentos pequenos e tipados, não entidades Room ou objetos de tela.
 
-Notificação usa intent explícito e identificadores estáveis. “Abrir capítulo” abre a URL validada no navegador (ou destino interno se isso for escolhido) e não grava leitura; “marcar como lido” chama a ação de domínio explicitamente. A navegação preserva back stack válido e restaura argumentos após recriação quando necessário.
+Notificações usam intents explícitos e identificadores estáveis. “Abrir capítulo” abre a URL validada no navegador (ou destino interno se isso for escolhido) e não grava leitura; “marcar como lido” chama a ação de domínio explicitamente. Problemas de monitoramento usam canal próprio, respeitam permissão/canal bloqueados e abrem o app sem alterar leitura. A navegação preserva back stack válido e restaura argumentos após recriação quando necessário.
 
 ## 9. Descoberta de sites
 
@@ -166,10 +169,12 @@ Registro e prioridade implementados:
 
 1. Configuração manual válida do host.
 2. Adapter de site/layout registrado com evidência observada (`HiveToonsArticleParser`).
-3. Estratégias genéricas independentes (Open Graph/JSON-LD, Schema.org e metadados HTML).
+3. Estratégias genéricas independentes (Open Graph/JSON-LD, Schema.org, metadados HTML e RSS/Atom).
 4. Descoberta ambígua/insuficiente → assistente CSS/regex; não fingir sucesso.
 
 Uma lista só é completa quando `ItemList` Schema.org ou as entradas de uma lista manual são positivamente validadas. Metadados parciais e shells dinâmicos são prévias/configuração necessária. A tela de descoberta não chama a persistência de snapshots, portanto não pode apagar capítulos antigos nem afirmar “sem novidades”.
+
+`SyndicationFeedParser` reconhece links `rel="alternate"` do mesmo host com tipo RSS/Atom e usa o caminho WordPress `/feed/` apenas como pista. O parser é puro: lê o XML fornecido em `ParserDocument.supplementalData` pela chave exposta em `SyndicationFeedParser.supplementalDataKey`, sem iniciar requisições HTTP. Só devolve uma janela `isLatestChapterKnown` quando há pelo menos dois capítulos associados à série e a ordem é comprovada por números ou datas; conteúdo ausente, vazio, truncado, parcialmente interpretado ou ambíguo resulta em `RequiresConfiguration`, nunca em uma janela vazia válida. A obtenção segura do feed e sua passagem em `supplementalData` permanecem responsabilidade do fluxo de fetch, ainda não integrada nesta etapa.
 
 Parsers de site vivem em adapters isolados e recebem fixtures próprias. Registrar um novo parser adiciona implementação ao conjunto, sem `if/when` por domínio no repositório ou tela. Regras CSS são validadas pelo Jsoup; regex usa RE2/J com limite de tamanho e grupo de captura. Links relativos são resolvidos contra a URL de origem e somente URLs HTTP/HTTPS sem credenciais são aceitas. Configuração manual não salva antes de um teste bem-sucedido.
 
@@ -193,6 +198,7 @@ Snapshots só são confirmados em uma transação após fetch e parsing completo
 - **Implementado:** cadastro agenda uma primeira checagem automática; refresh manual continua no foreground e compartilha `MangaCheckCoordinator`, mesmo quando o monitoramento está pausado.
 - **Implementado:** falhas transitórias de rede, HTTP 429 e servidor resultam em retry com backoff exponencial iniciado em 30 minutos. Erros de acesso, configuração ou parsing são registrados sem retry imediato; o próximo ciclo pode tentar novamente.
 - **Implementado:** o coordenador serializa checagens por manga e aplica intervalo mínimo em memória de dois segundos entre requisições ao mesmo host. Falhas e sucessos geram tentativas persistidas; apenas parse completo altera o snapshot. Não agenda navegador WebView.
+- **Implementado e testado:** sinais de problema usam a consulta derivada do DAO, contabilizam apenas respostas de servidor e erros de parsing desde o último sucesso, e ativam após cinco falhas elegíveis ou mais de três dias sem sucesso quando existe falha elegível. Falhas de rede não aumentam a contagem. O coordenador registra no DataStore o episódio já notificado e remove o aviso ativo após sucesso.
 - A limitação de execução aproximada é exposta na interface e deve permanecer clara na documentação. A limitação do WorkManager significa que “uma hora” é a cadência desejada, não SLA de execução.
 
 Outcomes distinguem sucesso com atualizações, sucesso sem atualizações, rede, bloqueio/acesso, página indisponível, HTML/parsing inválido, conteúdo dinâmico não suportado e cancelamento. Apenas sucesso completo atualiza o snapshot.
@@ -203,7 +209,7 @@ Outcomes distinguem sucesso com atualizações, sucesso sem atualizações, rede
 - **Imagem segura e opcional:** notificações usam `SafeCoverImageFetcher`, que limita resposta a 2 MiB, valida host/IP público, fixa endereços DNS, restringe redirects ao mesmo host sem downgrade HTTPS e exige `image/*`. A UI configura Coil com `SafePublicImageHttpClient`, que valida hosts públicos, bloqueia credenciais/portas não permitidas e limita respostas. A decodificação de capas de notificação é reduzida fora da main thread; falhas mantêm o conteúdo textual.
 - **Agrupamento:** filhos usam group key estável e tag por ID local do capítulo; atualizar resumo InboxStyle quando existem avisos ativos de ao menos dois mangás distintos. A ação de marcar lido remove apenas a notificação daquele capítulo e recalcula o resumo.
 - **Ações independentes:** “Abrir capítulo” usa PendingIntent imutável `ACTION_VIEW` para URL HTTP(S) validada, sem chamar repositório. “Marcar como lido” usa PendingIntent imutável para `MarkChapterReadReceiver`, explicitamente não exportado, e persiste `READ` com origem `NOTIFICATION_ACTION`; ação repetida não gera evento de histórico duplicado.
-- **Entrega idempotente:** o capítulo é marcado com `notificationPostedAtEpochMillis` apenas depois que `NotificationManagerCompat.notify` retorna sem erro; DAO atualiza somente campo ainda nulo. Não há migração: a coluna já existia no schema v2.
+- **Entrega idempotente:** o capítulo é marcado com `notificationPostedAtEpochMillis` apenas depois que `NotificationManagerCompat.notify` retorna sem erro; DAO atualiza somente campo ainda nulo. A coluna já existia no schema v2 e foi preservada nas migrations seguintes.
 - **Permissão:** canal configurado para API 26+; manifest declara `POST_NOTIFICATIONS` para target 35. A solicitação runtime em API 33+ só ocorre após ação explícita “Enable chapter notifications” em Settings. Testes Robolectric cobrem canal em API 26 e permissão negada em API 33; permissão negada ou canal bloqueado não é contornado. A validação em dispositivo continua pendente.
 
 ## 13. Histórico de leitura
@@ -244,15 +250,16 @@ Abrir capítulo (na tela ou notificação) apenas abre o link. Marcar/desmarcar 
 ## Decisões ainda necessárias antes ou durante a implementação
 
 - Confirmar o namespace/applicationId provisório antes de distribuição; instalar Android Studio, JDK 17 e SDK 35 no ambiente de desenvolvimento permanente.
+- Decidido e implementado: `allowBackup=false`, regras `fullBackupContent` para versões anteriores ao Android 12 e `dataExtractionRules` excluem os dados locais de backup em nuvem e transferência entre dispositivos. O backup JSON manual do app permanece disponível.
 - Definir se configurações pertencem exatamente ao hostname ou a um escopo registrable/subdomínio; nunca herdar configuração usando substring.
 - Definir tratamento de identidade duplicada quando a página de série não puder ser detectada.
-- Capítulos novos começam não lidos. Decidir se o primeiro cadastro estabelece baseline sem notificações para esses capítulos.
+- Decidido e implementado: no cadastro por link com janela recente validada, usar o capítulo informado como baseline quando ele for identificado; salvar esse capítulo e os mais novos da janela como não lidos, sem notificação retroativa. Se não for identificado, manter o capítulo mais recente disponível como baseline e informar o fallback. Falhas de parsing não alteram dados locais; não foi necessária migração de schema.
 - Definir regra de ordenação entre capítulos numéricos e especiais/extra com amostras reais.
 - Decidido e implementado: a atualização manual continua disponível no detalhe de cada mangá e a biblioteca oferece "Atualizar tudo" para todos os mangás com monitoramento ativo, usando o coordenador existente e exibindo o resumo de sucessos e falhas.
-- Definir como reportar pedido de notificação negado e se haverá uma opção explícita para reprocessar aviso pendente.
+- Decidido e implementado: explicar uma vez a permissão de notificações após o primeiro cadastro monitorado e, se ela ou o canal estiver bloqueado, mostrar um aviso na biblioteca com atalho às configurações do Android. Ainda falta decidir se haverá ação explícita para reprocessar aviso pendente.
 - Avaliar, após exemplos reais e consulta de permissões/termos, se há fonte dinâmica que justifique WebView assistida; sem tal validação, manter como não suportada para monitoramento automático.
 - Selecionar páginas/tipos de conteúdo e autorizações para testar os três domínios candidatos. Nenhum está validado hoje.
 
 ## Estado do repositório
 
-O projeto Gradle, o Wrapper, Room v2, descoberta estática, fluxos iniciais, monitoramento WorkManager e pipeline de notificações estão implementados. A auditoria mais recente passou no build completo e nos testes JVM disponíveis; confirmou a separação entre abrir capítulo e marcar leitura e a preservação de dados em resultados incompletos. Nenhum site é plenamente suportado e não houve teste em emulador/dispositivo. O coordenador mantém mapas de locks e timestamps por manga/host apenas em memória, sem política de remoção; não foi medido impacto de memória. Alterações à arquitetura devem ser refletidas em `PROJECT_STATUS.md` e somente decisões verificadas devem ser descritas como concluídas.
+O projeto Gradle, o Wrapper, Room v3, descoberta estática, fluxos iniciais, monitoramento WorkManager e pipeline de notificações estão implementados. A auditoria mais recente passou no build completo e nos testes JVM disponíveis; confirmou a separação entre abrir capítulo e marcar leitura e a preservação de dados em resultados incompletos. Nenhum site é plenamente suportado e não houve teste em emulador/dispositivo. O coordenador mantém mapas de locks e timestamps por manga/host apenas em memória, sem política de remoção; não foi medido impacto de memória. Alterações à arquitetura devem ser refletidas em `PROJECT_STATUS.md` e somente decisões verificadas devem ser descritas como concluídas.

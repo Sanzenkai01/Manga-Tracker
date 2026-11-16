@@ -14,6 +14,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -26,7 +27,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.sanzenkai.mangatracker.R
 import com.sanzenkai.mangatracker.data.AppContainer
+import com.sanzenkai.mangatracker.notifications.hasMonitoringProblemNotificationPermission
 import com.sanzenkai.mangatracker.notifications.hasNotificationPermission
+import com.sanzenkai.mangatracker.notifications.NotificationPermissionPromptStore
 import com.sanzenkai.mangatracker.notifications.openAppNotificationSettings
 import com.sanzenkai.mangatracker.ui.details.MangaDetailScreen
 import com.sanzenkai.mangatracker.ui.details.MangaDetailViewModel
@@ -49,6 +52,61 @@ fun MangaTrackerNavigation(
 ) {
     val navController = rememberNavController()
     val context = LocalContext.current
+    val notificationPromptStore = remember(context) {
+        NotificationPermissionPromptStore(context)
+    }
+    var notificationsAvailable by remember(context) {
+        mutableStateOf(hasNotificationPermission(context))
+    }
+    var monitoringProblemNotificationsAvailable by remember(context) {
+        mutableStateOf(hasMonitoringProblemNotificationPermission(context))
+    }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) {
+        notificationsAvailable = hasNotificationPermission(context)
+        monitoringProblemNotificationsAvailable = hasMonitoringProblemNotificationPermission(context)
+    }
+    var showNotificationPermissionRationale by rememberSaveable {
+        mutableStateOf(false)
+    }
+    var pendingRegistrationMangaId by rememberSaveable {
+        mutableStateOf<String?>(null)
+    }
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    fun navigateToManga(mangaId: String) {
+        navController.navigate("manga/${Uri.encode(mangaId)}") {
+            popUpTo(SITE_DISCOVERY_ROUTE) { inclusive = true }
+            launchSingleTop = true
+        }
+    }
+
+    fun finishPendingRegistration() {
+        val mangaId = pendingRegistrationMangaId
+        pendingRegistrationMangaId = null
+        showNotificationPermissionRationale = false
+        if (mangaId != null) {
+            navigateToManga(mangaId)
+        }
+    }
+
+    fun openNotificationSettings() {
+        notificationPromptStore.markPrompted()
+        openAppNotificationSettings(context)
+    }
+
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                notificationsAvailable = hasNotificationPermission(context)
+                monitoringProblemNotificationsAvailable =
+                    hasMonitoringProblemNotificationPermission(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     NavHost(
         navController = navController,
@@ -61,8 +119,11 @@ fun MangaTrackerNavigation(
             val state = viewModel.uiState.collectAsStateWithLifecycle()
             LibraryScreen(
                 state = state.value,
+                notificationsAvailable = notificationsAvailable &&
+                    monitoringProblemNotificationsAvailable,
                 onDiscoverSites = { navController.navigate(SITE_DISCOVERY_ROUTE) },
                 onOpenSettings = { navController.navigate(SETTINGS_ROUTE) },
+                onOpenNotificationSettings = ::openNotificationSettings,
                 onLayoutChanged = viewModel::setLayout,
                 onReadFilterChanged = viewModel::setReadFilter,
                 onRefreshAll = viewModel::refreshAllMonitoredManga,
@@ -79,15 +140,6 @@ fun MangaTrackerNavigation(
         }
         composable(SETTINGS_ROUTE) {
             val state = settingsViewModel.uiState.collectAsStateWithLifecycle()
-            val lifecycleOwner = LocalLifecycleOwner.current
-            var notificationsEnabled by remember(context) {
-                mutableStateOf(hasNotificationPermission(context))
-            }
-            val notificationPermissionLauncher = rememberLauncherForActivityResult(
-                ActivityResultContracts.RequestPermission(),
-            ) {
-                notificationsEnabled = hasNotificationPermission(context)
-            }
             val backupDocumentLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.CreateDocument("application/json"),
             ) { uri ->
@@ -98,18 +150,9 @@ fun MangaTrackerNavigation(
             ) { uri ->
                 uri?.let(settingsViewModel::importBackup)
             }
-            DisposableEffect(lifecycleOwner, context) {
-                val observer = LifecycleEventObserver { _, event ->
-                    if (event == Lifecycle.Event.ON_RESUME) {
-                        notificationsEnabled = hasNotificationPermission(context)
-                    }
-                }
-                lifecycleOwner.lifecycle.addObserver(observer)
-                onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-            }
             SettingsScreen(
                 state = state.value,
-                notificationsEnabled = notificationsEnabled,
+                notificationsEnabled = notificationsAvailable,
                 onBack = { navController.popBackStack() },
                 onLayoutChanged = settingsViewModel::setLibraryLayout,
                 onThemeModeChanged = settingsViewModel::setThemeMode,
@@ -119,12 +162,13 @@ fun MangaTrackerNavigation(
                         context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
                         PackageManager.PERMISSION_GRANTED
                     ) {
+                        notificationPromptStore.markPrompted()
                         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     } else {
-                        openAppNotificationSettings(context)
+                        openNotificationSettings()
                     }
                 },
-                onOpenNotificationSettings = { openAppNotificationSettings(context) },
+                onOpenNotificationSettings = ::openNotificationSettings,
                 onConfigureSite = { navController.navigate(SITE_DISCOVERY_ROUTE) },
                 onExportBackup = {
                     backupDocumentLauncher.launch(
@@ -173,10 +217,32 @@ fun MangaTrackerNavigation(
                 onTestConfiguration = viewModel::testManualConfiguration,
                 onSaveConfiguration = viewModel::saveManualConfiguration,
                 onRegisterManga = viewModel::registerManga,
+                showNotificationPermissionRationale = showNotificationPermissionRationale,
+                onRequestNotificationPermission = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+                        PackageManager.PERMISSION_GRANTED
+                    ) {
+                        notificationPermissionLauncher.launch(
+                            Manifest.permission.POST_NOTIFICATIONS,
+                        )
+                    }
+                    finishPendingRegistration()
+                },
+                onDismissNotificationPermissionRationale = ::finishPendingRegistration,
                 onMangaRegistered = { mangaId ->
-                    navController.navigate("manga/${Uri.encode(mangaId)}") {
-                        popUpTo(SITE_DISCOVERY_ROUTE) { inclusive = true }
-                        launchSingleTop = true
+                    val shouldExplainPermission =
+                        state.value.shouldPromptForNotificationPermission &&
+                            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+                            PackageManager.PERMISSION_GRANTED &&
+                            !notificationPromptStore.hasPrompted()
+                    if (shouldExplainPermission) {
+                        notificationPromptStore.markPrompted()
+                        pendingRegistrationMangaId = mangaId
+                        showNotificationPermissionRationale = true
+                    } else {
+                        navigateToManga(mangaId)
                     }
                 },
                 onBack = { navController.popBackStack() },

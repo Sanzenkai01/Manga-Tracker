@@ -5,6 +5,8 @@
     <string name="library_empty_body">Os mangás adicionados aparecerão aqui.</string>
     <string name="library_refresh_all">Atualizar todos os mangás monitorados</string>
     <string name="library_refresh_summary">%1$d atualizados, %2$d com falha</string>
+    <string name="library_notification_warning">As notificações estão desativadas ou bloqueadas. Ative-as para receber avisos dos mangás monitorados.</string>
+    <string name="library_notification_settings_action">Configurações de notificações</string>
     <string name="settings_action">Configurações</string>
     <string name="settings_title">Configurações</string>
     <string name="settings_layout_title">Visualização da biblioteca</string>
@@ -38,6 +40,10 @@
     <string name="settings_enable_notifications">Ativar notificações de capítulos</string>
     <string name="settings_notification_permission_help">No Android 13 ou superior, permita os avisos quando o aplicativo pedir. Se estiverem bloqueados, ative-os nas configurações de notificações do celular.</string>
     <string name="settings_open_notification_settings">Abrir configurações de notificações</string>
+    <string name="notification_permission_rationale_title">Receba avisos de capítulos</string>
+    <string name="notification_permission_rationale_message">Permita notificações para o Manga Tracker avisar quando encontrar capítulos novos dos mangás que você monitora.</string>
+    <string name="notification_permission_rationale_continue">Continuar</string>
+    <string name="notification_permission_rationale_not_now">Agora não</string>
     <string name="settings_configure_site">Analisar ou configurar um site</string>
     <string name="manga_details_title">Detalhes do mangá</string>
     <string name="manga_details_unavailable">Os detalhes do mangá não estão disponíveis.</string>
@@ -48,6 +54,8 @@
     <string name="last_check_failed">A última verificação falhou</string>
     <string name="last_check_incomplete">Não foi possível validar os capítulos recentes</string>
     <string name="last_check_outcome">Status da última verificação: %1$s</string>
+    <string name="monitoring_problem_badge">Problema no monitoramento</string>
+    <string name="monitoring_problem_explanation">Esta página pode ter mudado e as buscas automáticas não estão funcionando. Tente configurar o site manualmente.</string>
     <string name="chapter_list_title">Capítulos</string>
     <string name="chapter_list_empty">Nenhum capítulo salvo foi encontrado.</string>
     <string name="chapter_status_read">Já lido</string>
@@ -94,9 +102,19 @@
     <string name="monitoring_paused">Busca automática pausada</string>
     <string name="notification_channel_name">Novos capítulos de mangá</string>
     <string name="notification_channel_description">Avisos quando um novo capítulo de mangá for detectado.</string>
+    <string name="notification_channel_monitoring_problem_name">Problemas no monitoramento de sites</string>
+    <string name="notification_channel_monitoring_problem_description">Avisos quando a página de um site monitorado pode ter mudado e as buscas automáticas falham.</string>
+    <string name="notification_monitoring_problem_title">O monitoramento precisa de atenção: %1$s</string>
+    <string name="notification_monitoring_problem_body">A página pode ter mudado. Abra o mangá e tente configurar o site manualmente.</string>
     <string name="notification_chapter_content">%1$s • %2$s • Detectado em %3$s</string>
     <string name="notification_open_chapter">Abrir capítulo</string>
+    <string name="notification_open_latest_chapter">Abrir o mais recente</string>
     <string name="notification_mark_read">Marcar como lido</string>
+    <string name="notification_mark_group_read">Marcar como lidos</string>
+    <plurals name="notification_grouped_chapter_count">
+        <item quantity="one">%1$d novo capítulo: %2$s</item>
+        <item quantity="other">%1$d novos capítulos: %2$s</item>
+    </plurals>
     <string name="notification_group_title">Novos capítulos de mangá</string>
     <plurals name="notification_group_count">
         <item quantity="one">%1$d mangá recebeu novos capítulos</item>

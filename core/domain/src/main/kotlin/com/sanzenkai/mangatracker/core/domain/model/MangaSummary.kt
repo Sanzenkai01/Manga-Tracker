@@ -12,4 +12,5 @@ data class MangaSummary(
     val lastAttemptAtEpochMillis: Long? = null,
     val lastSuccessAtEpochMillis: Long? = null,
     val lastOutcome: String? = null,
+    val isMonitoringProblem: Boolean = false,
 )

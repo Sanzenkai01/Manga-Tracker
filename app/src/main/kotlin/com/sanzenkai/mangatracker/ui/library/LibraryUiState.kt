@@ -34,6 +34,9 @@ data class LibraryUiState(
     val isSelectionMode: Boolean
         get() = selectedMangaIds.isNotEmpty()
 
+    val hasMonitoredManga: Boolean
+        get() = mangas.any(MangaSummary::monitoringEnabled)
+
     val visibleMangas: List<MangaSummary>
         get() = mangas.filter { manga ->
             when (readFilter) {

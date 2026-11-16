@@ -8,6 +8,7 @@ import com.sanzenkai.mangatracker.core.domain.model.MangaMetadataUpdate
 import com.sanzenkai.mangatracker.core.domain.model.MangaBackupSnapshot
 import com.sanzenkai.mangatracker.core.domain.model.MangaRegistrationResult
 import com.sanzenkai.mangatracker.core.domain.model.MangaSummary
+import com.sanzenkai.mangatracker.core.domain.model.MonitoringProblemSignals
 import com.sanzenkai.mangatracker.core.domain.model.MonitoringSettings
 import com.sanzenkai.mangatracker.core.domain.model.ReadingAction
 import com.sanzenkai.mangatracker.core.domain.model.ReadingActionOrigin
@@ -93,6 +94,8 @@ interface MangaRepository {
     suspend fun setMonitoringEnabled(mangaId: String, isEnabled: Boolean)
 
     fun observeCheckAttempts(mangaId: String): Flow<List<CheckAttempt>>
+
+    fun observeMonitoringProblem(mangaId: String): Flow<MonitoringProblemSignals>
 
     suspend fun recordCheckAttempt(attempt: CheckAttempt)
 }

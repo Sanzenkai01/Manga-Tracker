@@ -19,6 +19,7 @@ import com.sanzenkai.mangatracker.core.domain.model.MangaBackupEntry
 import com.sanzenkai.mangatracker.core.domain.model.MangaBackupSnapshot
 import com.sanzenkai.mangatracker.core.domain.model.MangaRegistrationResult
 import com.sanzenkai.mangatracker.core.domain.model.MangaSummary
+import com.sanzenkai.mangatracker.core.domain.model.MonitoringProblemSignals
 import com.sanzenkai.mangatracker.core.domain.model.MonitoringSettings
 import com.sanzenkai.mangatracker.core.domain.model.ReadingAction
 import com.sanzenkai.mangatracker.core.domain.model.ReadingActionOrigin
@@ -29,10 +30,12 @@ import com.sanzenkai.mangatracker.core.domain.model.ValidatedChapterSnapshot
 import com.sanzenkai.mangatracker.core.domain.repository.MangaRepository
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 
 class RoomMangaRepository(
     private val database: MangaTrackerDatabase,
+    private val clock: () -> Long = System::currentTimeMillis,
     private val idGenerator: () -> String = { UUID.randomUUID().toString() },
 ) : MangaRepository {
     private val mangaDao = database.mangaDao()
@@ -210,7 +213,12 @@ class RoomMangaRepository(
     }
 
     override fun observeLibrary(): Flow<List<MangaSummary>> =
-        mangaDao.observeLibraryRows().map { rows ->
+        combine(
+            mangaDao.observeLibraryRows(),
+            checkAttemptDao.observeMonitoringProblemSignals(),
+        ) { rows, problemSignals ->
+            val signalsByMangaId = problemSignals.associateBy { it.mangaId }
+            val nowEpochMillis = clock()
             rows.map { row ->
                 MangaSummary(
                     id = row.id,
@@ -224,6 +232,8 @@ class RoomMangaRepository(
                     lastAttemptAtEpochMillis = row.lastAttemptAtEpochMillis,
                     lastSuccessAtEpochMillis = row.lastSuccessAtEpochMillis,
                     lastOutcome = row.lastOutcome,
+                    isMonitoringProblem = row.monitoringEnabled &&
+                        signalsByMangaId[row.id]?.isProblem(nowEpochMillis) == true,
                 )
             }
         }
@@ -473,6 +483,11 @@ class RoomMangaRepository(
     override fun observeCheckAttempts(mangaId: String): Flow<List<CheckAttempt>> =
         checkAttemptDao.observeForManga(mangaId).map { attempts ->
             attempts.map { attempt -> attempt.toDomain() }
+        }
+
+    override fun observeMonitoringProblem(mangaId: String): Flow<MonitoringProblemSignals> =
+        checkAttemptDao.observeMonitoringProblemSignals(mangaId).map { signals ->
+            signals.firstOrNull() ?: MonitoringProblemSignals.empty(mangaId)
         }
 
     override suspend fun recordCheckAttempt(attempt: CheckAttempt) {

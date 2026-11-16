@@ -13,9 +13,19 @@ import kotlinx.coroutines.launch
 
 class MarkChapterReadReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val chapterId = intent.getStringExtra(EXTRA_CHAPTER_ID)
-            ?.takeIf { it.isNotBlank() }
-        if (intent.action != ACTION_MARK_READ || chapterId == null) {
+        val chapterIds = if (intent.hasExtra(EXTRA_CHAPTER_IDS)) {
+            intent.getStringArrayListExtra(EXTRA_CHAPTER_IDS)
+                ?.takeIf { ids ->
+                    ids.isNotEmpty() &&
+                        ids.all(String::isNotBlank) &&
+                        ids.distinct().size == ids.size
+                }
+        } else {
+            intent.getStringExtra(EXTRA_CHAPTER_ID)
+                ?.takeIf { it.isNotBlank() }
+                ?.let(::listOf)
+        }
+        if (intent.action != ACTION_MARK_READ || chapterIds == null) {
             Log.w(TAG, "Ignored a chapter notification action with invalid input.")
             return
         }
@@ -29,9 +39,9 @@ class MarkChapterReadReceiver : BroadcastReceiver() {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
                 val changed = application.container.chapterNotificationActionHandler
-                    .markChapterAsRead(chapterId)
-                Log.i(TAG, if (changed) "Chapter marked as read from notification."
-                else "Chapter was already read; notification dismissed.")
+                    .markChaptersAsRead(chapterIds)
+                Log.i(TAG, if (changed) "Chapters marked as read from notification."
+                else "Chapters were already read; notifications dismissed.")
             } catch (error: SQLiteException) {
                 Log.e(TAG, "Could not save the notification read action.", error)
             } catch (error: IllegalStateException) {
@@ -45,6 +55,7 @@ class MarkChapterReadReceiver : BroadcastReceiver() {
     companion object {
         const val ACTION_MARK_READ = "com.sanzenkai.mangatracker.action.MARK_CHAPTER_READ"
         const val EXTRA_CHAPTER_ID = "chapter_id"
+        const val EXTRA_CHAPTER_IDS = "chapter_ids"
         private const val TAG = "ChapterReadAction"
     }
 }

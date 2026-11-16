@@ -14,6 +14,12 @@ interface ChapterNotificationPublisher {
     fun cancelChapter(chapterId: String)
 
     fun cancelMangaNotifications(mangaIds: Set<String>)
+
+    fun canPostSiteProblemNotifications(): Boolean = false
+
+    suspend fun publishSiteMonitoringProblem(manga: Manga, episodeId: String): Boolean = false
+
+    fun clearSiteMonitoringProblem(mangaId: String) = Unit
 }
 
 object NoOpChapterNotificationPublisher : ChapterNotificationPublisher {

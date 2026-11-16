@@ -39,6 +39,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -67,8 +68,10 @@ import com.sanzenkai.mangatracker.ui.components.ReadingStatusBadge
 @Composable
 fun LibraryScreen(
     state: LibraryUiState,
+    notificationsAvailable: Boolean,
     onDiscoverSites: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenNotificationSettings: () -> Unit,
     onLayoutChanged: (LibraryLayout) -> Unit,
     onReadFilterChanged: (LibraryReadFilter) -> Unit,
     onRefreshAll: () -> Unit,
@@ -185,6 +188,11 @@ fun LibraryScreen(
                     .fillMaxSize()
                     .padding(contentPadding),
             ) {
+                NotificationPermissionBanner(
+                    hasMonitoredManga = state.hasMonitoredManga,
+                    notificationsAvailable = notificationsAvailable,
+                    onOpenNotificationSettings = onOpenNotificationSettings,
+                )
                 val filters = LibraryReadFilter.values()
                 val visibleMangas = state.visibleMangas
                 if (state.isSelectionMode) {
@@ -564,6 +572,20 @@ private fun MangaSummaryContent(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
+        if (manga.isMonitoringProblem) {
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = MaterialTheme.colorScheme.errorContainer,
+            ) {
+                Text(
+                    text = stringResource(R.string.monitoring_problem_badge),
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                )
+            }
+        }
         manga.readingStatus()?.let { status ->
             ReadingStatusBadge(status)
         }

@@ -11,6 +11,7 @@ import com.sanzenkai.mangatracker.core.domain.model.MangaMetadataUpdate
 import com.sanzenkai.mangatracker.core.domain.model.MangaBackupSnapshot
 import com.sanzenkai.mangatracker.core.domain.model.MangaRegistrationResult
 import com.sanzenkai.mangatracker.core.domain.model.MangaSummary
+import com.sanzenkai.mangatracker.core.domain.model.MonitoringProblemSignals
 import com.sanzenkai.mangatracker.core.domain.model.MonitoringSettings
 import com.sanzenkai.mangatracker.core.domain.model.ReadingAction
 import com.sanzenkai.mangatracker.core.domain.model.ReadingActionOrigin
@@ -19,6 +20,7 @@ import com.sanzenkai.mangatracker.core.domain.model.SiteConfiguration
 import com.sanzenkai.mangatracker.core.domain.model.TrackedChapter
 import com.sanzenkai.mangatracker.core.domain.model.ValidatedChapterSnapshot
 import com.sanzenkai.mangatracker.core.domain.repository.MangaRepository
+import com.sanzenkai.mangatracker.core.domain.repository.SiteProblemNotificationRepository
 import com.sanzenkai.mangatracker.core.parser.api.ParsedChapter
 import com.sanzenkai.mangatracker.core.parser.api.ParsedSitePage
 import com.sanzenkai.mangatracker.core.parser.api.ParserDocument
@@ -32,6 +34,7 @@ import com.sanzenkai.mangatracker.notifications.NoOpChapterNotificationPublisher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -189,6 +192,65 @@ class MangaCheckCoordinatorTest {
     }
 
     @Test
+    fun latestChapterWindowUsesNumbersAfterSiteChangesKeysAndIgnoresExtras() = runTest {
+        val manga = testManga()
+        val repository = RecordingMangaRepository(manga).apply {
+            seedExistingChapter(
+                ParsedChapter(
+                    sourceKey = "old-site-chapter",
+                    label = "Chapter 3.5",
+                    url = "https://example.test/manga/sample/chapter-3-5",
+                    publishedAtEpochMillis = null,
+                ),
+            )
+        }
+        val document = testDocument(manga)
+        val latestWindow = listOf(
+            ParsedChapter(
+                sourceKey = "site-chapter-4",
+                label = "Solo Leveling 2 - Chapter 4",
+                url = "https://example.test/manga/sample/chapter-4",
+                publishedAtEpochMillis = null,
+            ),
+            ParsedChapter(
+                sourceKey = "site-extra",
+                label = "Extra 3",
+                url = "https://example.test/manga/sample/extra-3",
+                publishedAtEpochMillis = null,
+            ),
+            ParsedChapter(
+                sourceKey = "site-chapter-3-5",
+                label = "Chapter 3,5",
+                url = "https://example.test/manga/sample/chapter-3-5",
+                publishedAtEpochMillis = null,
+            ),
+        )
+        val coordinator = coordinator(
+            repository = repository,
+            document = document,
+            page = ParsedSitePage(
+                title = manga.title,
+                originalCoverUrl = null,
+                seriesUrl = manga.seriesUrl,
+                currentChapter = latestWindow.first(),
+                chapters = latestWindow,
+                isChapterListComplete = false,
+                isLatestChapterKnown = true,
+            ),
+            parserDispatcher = StandardTestDispatcher(testScheduler),
+        )
+
+        val result = coordinator.check(manga.id, "MANUAL", requireMonitoringEnabled = false)
+
+        assertTrue(result is MangaCheckResult.Success)
+        assertEquals(1, (result as MangaCheckResult.Success).newChapterCount)
+        assertEquals(
+            listOf("site-chapter-4"),
+            repository.savedSnapshots.single().chapters.map { it.sourceChapterKey },
+        )
+    }
+
+    @Test
     fun usesEntryChapterUrlWhenSeriesUrlIsNotOnTheTrackedHost() = runTest {
         val manga = testManga().copy(seriesUrl = "https://other.test/manga/sample")
         val repository = RecordingMangaRepository(manga)
@@ -274,6 +336,171 @@ class MangaCheckCoordinatorTest {
     }
 
     @Test
+    fun siteProblemNotificationIsSentOnceAfterFiveEligibleFailures() = runTest {
+        val manga = testManga()
+        val repository = RecordingMangaRepository(manga)
+        repeat(4) { index ->
+            repository.attempts += CheckAttempt(
+                id = "site-failure-$index",
+                mangaId = manga.id,
+                trigger = "AUTOMATIC",
+                startedAtEpochMillis = index * 10L,
+                finishedAtEpochMillis = index * 10L + 1,
+                outcome = "FAILURE",
+                errorCode = HtmlFetchFailureCode.PAGE_UNAVAILABLE.name,
+            )
+        }
+        val publisher = RecordingChapterNotificationPublisher()
+        val notificationRepository = RecordingSiteProblemNotificationRepository()
+        val document = testDocument(manga)
+        val coordinator = coordinator(
+            repository = repository,
+            document = document,
+            page = ParsedSitePage(
+                title = manga.title,
+                originalCoverUrl = null,
+                seriesUrl = manga.seriesUrl,
+                currentChapter = null,
+                chapters = emptyList(),
+                isChapterListComplete = false,
+            ),
+            parserDispatcher = StandardTestDispatcher(testScheduler),
+            fetchResult = HtmlFetchResult.Failure(
+                reason = "The page is unavailable.",
+                code = HtmlFetchFailureCode.PAGE_UNAVAILABLE,
+            ),
+            notificationPublisher = publisher,
+            siteProblemNotificationRepository = notificationRepository,
+        )
+
+        coordinator.check(manga.id, "AUTOMATIC", requireMonitoringEnabled = true)
+        coordinator.check(manga.id, "AUTOMATIC", requireMonitoringEnabled = true)
+
+        assertEquals(listOf(manga.id to "site-failure-0"), publisher.siteProblemNotifications)
+        assertEquals("site-failure-0", notificationRepository.claimedEpisodes[manga.id])
+    }
+
+    @Test
+    fun networkFailuresAloneDoNotCreateASiteProblemNotification() = runTest {
+        val manga = testManga()
+        val repository = RecordingMangaRepository(manga)
+        val publisher = RecordingChapterNotificationPublisher()
+        val document = testDocument(manga)
+        val coordinator = coordinator(
+            repository = repository,
+            document = document,
+            page = ParsedSitePage(
+                title = manga.title,
+                originalCoverUrl = null,
+                seriesUrl = manga.seriesUrl,
+                currentChapter = null,
+                chapters = emptyList(),
+                isChapterListComplete = false,
+            ),
+            parserDispatcher = StandardTestDispatcher(testScheduler),
+            fetchResult = HtmlFetchResult.Failure(
+                reason = "The network is temporarily unavailable.",
+                code = HtmlFetchFailureCode.NETWORK_ERROR,
+            ),
+            notificationPublisher = publisher,
+            siteProblemNotificationRepository = RecordingSiteProblemNotificationRepository(),
+        )
+
+        coordinator.check(manga.id, "AUTOMATIC", requireMonitoringEnabled = true)
+
+        assertTrue(publisher.siteProblemNotifications.isEmpty())
+    }
+
+    @Test
+    fun successfulCheckEndsAnEpisodeAndLaterFailureEpisodeCanNotify() = runTest {
+        val manga = testManga()
+        val repository = RecordingMangaRepository(manga)
+        repeat(4) { index ->
+            repository.attempts += CheckAttempt(
+                id = "first-site-failure-$index",
+                mangaId = manga.id,
+                trigger = "AUTOMATIC",
+                startedAtEpochMillis = index * 10L,
+                finishedAtEpochMillis = index * 10L + 1,
+                outcome = "FAILURE",
+                errorCode = HtmlFetchFailureCode.PAGE_UNAVAILABLE.name,
+            )
+        }
+        val publisher = RecordingChapterNotificationPublisher()
+        val notificationRepository = RecordingSiteProblemNotificationRepository()
+        val document = testDocument(manga)
+        val failurePage = ParsedSitePage(
+            title = manga.title,
+            originalCoverUrl = null,
+            seriesUrl = manga.seriesUrl,
+            currentChapter = null,
+            chapters = emptyList(),
+            isChapterListComplete = false,
+        )
+
+        coordinator(
+            repository = repository,
+            document = document,
+            page = failurePage,
+            parserDispatcher = StandardTestDispatcher(testScheduler),
+            fetchResult = HtmlFetchResult.Failure("Unavailable.", HtmlFetchFailureCode.PAGE_UNAVAILABLE),
+            notificationPublisher = publisher,
+            siteProblemNotificationRepository = notificationRepository,
+        ).check(manga.id, "AUTOMATIC", requireMonitoringEnabled = true)
+
+        coordinator(
+            repository = repository,
+            document = document,
+            page = ParsedSitePage(
+                title = manga.title,
+                originalCoverUrl = null,
+                seriesUrl = manga.seriesUrl,
+                currentChapter = parsedChapter("chapter-1", 1, document.pageUrl),
+                chapters = listOf(parsedChapter("chapter-1", 1, document.pageUrl)),
+                isChapterListComplete = true,
+            ),
+            parserDispatcher = StandardTestDispatcher(testScheduler),
+            notificationPublisher = publisher,
+            siteProblemNotificationRepository = notificationRepository,
+        ).check(manga.id, "AUTOMATIC", requireMonitoringEnabled = true)
+
+        repeat(4) { index ->
+            repository.attempts += CheckAttempt(
+                id = "second-site-failure-$index",
+                mangaId = manga.id,
+                trigger = "AUTOMATIC",
+                startedAtEpochMillis = 110L + index * 10,
+                finishedAtEpochMillis = 111L + index * 10,
+                outcome = "FAILURE",
+                errorCode = HtmlFetchFailureCode.PAGE_UNAVAILABLE.name,
+            )
+        }
+        val nextEpisodeSignals = repository.observeMonitoringProblem(manga.id).first()
+        assertEquals(4, nextEpisodeSignals.siteFailureCount)
+        assertEquals("second-site-failure-0", nextEpisodeSignals.episodeId)
+        val nextEpisodeResult = coordinator(
+            repository = repository,
+            document = document,
+            page = failurePage,
+            parserDispatcher = StandardTestDispatcher(testScheduler),
+            fetchResult = HtmlFetchResult.Failure("Unavailable.", HtmlFetchFailureCode.PAGE_UNAVAILABLE),
+            notificationPublisher = publisher,
+            siteProblemNotificationRepository = notificationRepository,
+            clock = { 200L },
+        ).check(manga.id, "AUTOMATIC", requireMonitoringEnabled = true)
+
+        assertTrue(nextEpisodeResult is MangaCheckResult.Failure)
+        assertEquals(
+            listOf(
+                manga.id to "first-site-failure-0",
+                manga.id to "second-site-failure-0",
+            ),
+            publisher.siteProblemNotifications,
+        )
+        assertEquals(listOf(manga.id), publisher.clearedProblemMangaIds)
+    }
+
+    @Test
     fun newlyDiscoveredChaptersAreNotifiedAndDeliveryTimestampIsPersisted() = runTest {
         val manga = testManga()
         val repository = RecordingMangaRepository(manga)
@@ -350,6 +577,9 @@ class MangaCheckCoordinatorTest {
         onFetch: (String) -> Unit = {},
         fetchResult: HtmlFetchResult = HtmlFetchResult.Success(document),
         notificationPublisher: ChapterNotificationPublisher = NoOpChapterNotificationPublisher,
+        siteProblemNotificationRepository: SiteProblemNotificationRepository =
+            com.sanzenkai.mangatracker.core.domain.repository.NoOpSiteProblemNotificationRepository,
+        clock: () -> Long = { 100L },
     ) = MangaCheckCoordinator(
         mangaRepository = repository,
         htmlFetcher = HtmlDocumentFetcher { requestedUrl ->
@@ -370,11 +600,12 @@ class MangaCheckCoordinatorTest {
                 ),
             ),
         ),
-        clock = { 100L },
+        clock = clock,
         idGenerator = { "check-${repository.attempts.size}" },
         parserDispatcher = parserDispatcher,
         minimumSameHostRequestIntervalMillis = 0,
         notificationPublisher = notificationPublisher,
+        siteProblemNotificationRepository = siteProblemNotificationRepository,
     )
 
     private fun testManga() = Manga(
@@ -568,14 +799,49 @@ class MangaCheckCoordinatorTest {
 
         override fun observeCheckAttempts(mangaId: String): Flow<List<CheckAttempt>> = emptyFlow()
 
+        override fun observeMonitoringProblem(mangaId: String): Flow<MonitoringProblemSignals> {
+            val latestSuccessAt = attempts
+                .filter { it.outcome == "SUCCESS" }
+                .maxByOrNull { it.finishedAtEpochMillis ?: it.startedAtEpochMillis }
+                ?.let { it.finishedAtEpochMillis ?: it.startedAtEpochMillis }
+            val siteFailures = attempts
+                .filter { attempt ->
+                    attempt.errorCode in SITE_FAILURE_CODES &&
+                        (latestSuccessAt == null ||
+                            (attempt.finishedAtEpochMillis ?: attempt.startedAtEpochMillis) > latestSuccessAt)
+                }
+                .sortedBy { it.finishedAtEpochMillis ?: it.startedAtEpochMillis }
+            val firstFailure = siteFailures.firstOrNull()
+            return flowOf(
+                MonitoringProblemSignals(
+                    mangaId = mangaId,
+                    siteFailureCount = siteFailures.size,
+                    lastSuccessAtEpochMillis = latestSuccessAt,
+                    episodeId = firstFailure?.id,
+                    firstSiteFailureAtEpochMillis =
+                        firstFailure?.finishedAtEpochMillis ?: firstFailure?.startedAtEpochMillis,
+                ),
+            )
+        }
+
         override suspend fun recordCheckAttempt(attempt: CheckAttempt) {
             attempts += attempt
+        }
+
+        private companion object {
+            val SITE_FAILURE_CODES = setOf(
+                HtmlFetchFailureCode.PAGE_UNAVAILABLE.name,
+                "INVALID_HTML",
+                "INCOMPLETE_CHAPTER_LIST",
+            )
         }
     }
 
     private class RecordingChapterNotificationPublisher : ChapterNotificationPublisher {
         val publishedChapters = mutableListOf<TrackedChapter>()
         val publicationAttempts = mutableListOf<List<TrackedChapter>>()
+        val siteProblemNotifications = mutableListOf<Pair<String, String>>()
+        val clearedProblemMangaIds = mutableListOf<String>()
         var deliveryEnabled = true
 
         override suspend fun publishNewChapters(
@@ -592,5 +858,26 @@ class MangaCheckCoordinatorTest {
         override fun cancelChapter(chapterId: String) = Unit
 
         override fun cancelMangaNotifications(mangaIds: Set<String>) = Unit
+
+        override fun canPostSiteProblemNotifications() = true
+
+        override suspend fun publishSiteMonitoringProblem(manga: Manga, episodeId: String): Boolean {
+            siteProblemNotifications += manga.id to episodeId
+            return true
+        }
+
+        override fun clearSiteMonitoringProblem(mangaId: String) {
+            clearedProblemMangaIds += mangaId
+        }
+    }
+
+    private class RecordingSiteProblemNotificationRepository : SiteProblemNotificationRepository {
+        val claimedEpisodes = mutableMapOf<String, String>()
+
+        override suspend fun claimEpisodeNotification(mangaId: String, episodeId: String): Boolean {
+            if (claimedEpisodes[mangaId] == episodeId) return false
+            claimedEpisodes[mangaId] = episodeId
+            return true
+        }
     }
 }

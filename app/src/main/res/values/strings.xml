@@ -5,6 +5,8 @@
     <string name="library_empty_body">Manga you add will appear here.</string>
     <string name="library_refresh_all">Update all monitored manga</string>
     <string name="library_refresh_summary">%1$d updated, %2$d failed</string>
+    <string name="library_notification_warning">Notifications are off or blocked. Turn them on to receive alerts for monitored manga.</string>
+    <string name="library_notification_settings_action">Notification settings</string>
     <string name="settings_action">Settings</string>
     <string name="settings_title">Settings</string>
     <string name="settings_layout_title">Library layout</string>
@@ -38,6 +40,10 @@
     <string name="settings_enable_notifications">Enable chapter notifications</string>
     <string name="settings_notification_permission_help">On Android 13 or later, allow alerts when the app asks. If they are blocked, turn them on in your phone notification settings.</string>
     <string name="settings_open_notification_settings">Open notification settings</string>
+    <string name="notification_permission_rationale_title">Get chapter alerts</string>
+    <string name="notification_permission_rationale_message">Allow notifications so Manga Tracker can tell you when new chapters are found for manga you monitor.</string>
+    <string name="notification_permission_rationale_continue">Continue</string>
+    <string name="notification_permission_rationale_not_now">Not now</string>
     <string name="settings_configure_site">Analyze or configure a site</string>
     <string name="manga_details_title">Manga details</string>
     <string name="manga_details_unavailable">Manga details are unavailable.</string>
@@ -48,6 +54,8 @@
     <string name="last_check_failed">The last check failed</string>
     <string name="last_check_incomplete">The recent chapters could not be verified</string>
     <string name="last_check_outcome">Last check status: %1$s</string>
+    <string name="monitoring_problem_badge">Monitoring problem</string>
+    <string name="monitoring_problem_explanation">This page may have changed, so automatic checks are not working. Try configuring the site manually.</string>
     <string name="chapter_list_title">Chapters</string>
     <string name="chapter_list_empty">No saved chapters were found.</string>
     <string name="chapter_status_read">Already read</string>
@@ -91,9 +99,19 @@
     <string name="monitoring_paused">Automatic checks paused</string>
     <string name="notification_channel_name">New manga chapters</string>
     <string name="notification_channel_description">Alerts when a new manga chapter is detected.</string>
+    <string name="notification_channel_monitoring_problem_name">Site monitoring problems</string>
+    <string name="notification_channel_monitoring_problem_description">Alerts when a page from a monitored site may have changed and automatic checks are failing.</string>
+    <string name="notification_monitoring_problem_title">Monitoring needs attention: %1$s</string>
+    <string name="notification_monitoring_problem_body">The page may have changed. Open the manga and try configuring the site manually.</string>
     <string name="notification_chapter_content">%1$s • %2$s • Detected at %3$s</string>
     <string name="notification_open_chapter">Open chapter</string>
+    <string name="notification_open_latest_chapter">Open latest</string>
     <string name="notification_mark_read">Mark as read</string>
+    <string name="notification_mark_group_read">Mark these as read</string>
+    <plurals name="notification_grouped_chapter_count">
+        <item quantity="one">%1$d new chapter: %2$s</item>
+        <item quantity="other">%1$d new chapters: %2$s</item>
+    </plurals>
     <string name="notification_group_title">New manga chapters</string>
     <plurals name="notification_group_count">
         <item quantity="one">%1$d manga received new chapters</item>

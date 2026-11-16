@@ -72,6 +72,7 @@ object MangaSiteParsers {
         ImperioDaBritanniaParser(),
         MairimashitaIrumaKunParser(),
         RoliaScanParser(),
+        com.sanzenkai.mangatracker.core.parser.engine.SyndicationFeedParser(),
         com.sanzenkai.mangatracker.core.parser.engine.WordPressStructureParser(),
         com.sanzenkai.mangatracker.core.parser.engine.StructuredMetadataParser(),
         com.sanzenkai.mangatracker.core.parser.engine.HtmlMetadataParser(),

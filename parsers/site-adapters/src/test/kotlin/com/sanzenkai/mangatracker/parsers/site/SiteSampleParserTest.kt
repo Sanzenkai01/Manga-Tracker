@@ -5,6 +5,7 @@ import com.sanzenkai.mangatracker.core.parser.api.SiteParseIssue
 import com.sanzenkai.mangatracker.core.parser.api.SiteParseResult
 import com.sanzenkai.mangatracker.core.parser.engine.ParserRegistry
 import com.sanzenkai.mangatracker.core.parser.engine.SiteDiscoveryEngine
+import com.sanzenkai.mangatracker.core.parser.engine.SyndicationFeedParser
 import java.nio.charset.StandardCharsets
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -13,6 +14,34 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SiteSampleParserTest {
+    @Test
+    fun defaultRegistryReportsAnUnfetchedSyndicationFeedAsIncomplete() {
+        val result = SiteDiscoveryEngine(
+            ParserRegistry(MangaSiteParsers.default()),
+        ).discover(
+            ParserDocument(
+                pageUrl = "https://fiction.test/manga/northwind-chronicles/",
+                contentType = "text/html",
+                html = """
+                    <html><head>
+                      <title>Northwind Chronicles</title>
+                      <link rel="alternate" type="application/rss+xml"
+                            href="/manga/northwind-chronicles/feed/">
+                    </head><body></body></html>
+                """.trimIndent(),
+            ),
+        )
+
+        assertTrue(result is SiteParseResult.RequiresConfiguration)
+        val preview = (result as SiteParseResult.RequiresConfiguration).preview
+        assertEquals(
+            "https://fiction.test/manga/northwind-chronicles/feed/",
+            preview?.metadata?.get(SyndicationFeedParser.FEED_URL_METADATA_KEY),
+        )
+        assertFalse(preview?.isLatestChapterKnown == true)
+        assertFalse(preview?.isChapterListComplete == true)
+    }
+
     @Test
     fun mairimashitaHomepageFindsTheOriginalCoverAndNewestChapterWindow() {
         val result = SiteDiscoveryEngine(

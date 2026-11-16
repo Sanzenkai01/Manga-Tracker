@@ -33,13 +33,16 @@ class MangaDetailViewModel(
         mangaRepository.observeManga(mangaId),
         mangaRepository.observeChapters(mangaId),
         mangaRepository.observeMonitoringSettings(mangaId),
+        mangaRepository.observeMonitoringProblem(mangaId),
         operations,
-    ) { manga, chapters, monitoringSettings, operation ->
+    ) { manga, chapters, monitoringSettings, problemSignals, operation ->
         MangaDetailUiState(
             isLoading = false,
             manga = manga,
             chapters = chapters,
             monitoringSettings = monitoringSettings,
+            isMonitoringProblem = monitoringSettings?.isEnabled == true &&
+                problemSignals.isProblem(System.currentTimeMillis()),
             isRefreshing = operation.isRefreshing,
             error = operation.error,
             message = operation.message,

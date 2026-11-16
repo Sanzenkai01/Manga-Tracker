@@ -11,6 +11,7 @@ import com.sanzenkai.mangatracker.core.domain.model.MangaMetadataUpdate
 import com.sanzenkai.mangatracker.core.domain.model.MangaBackupSnapshot
 import com.sanzenkai.mangatracker.core.domain.model.MangaRegistrationResult
 import com.sanzenkai.mangatracker.core.domain.model.MangaSummary
+import com.sanzenkai.mangatracker.core.domain.model.MonitoringProblemSignals
 import com.sanzenkai.mangatracker.core.domain.model.MonitoringSettings
 import com.sanzenkai.mangatracker.core.domain.model.ReadingAction
 import com.sanzenkai.mangatracker.core.domain.model.ReadingActionOrigin
@@ -19,6 +20,7 @@ import com.sanzenkai.mangatracker.core.domain.model.SiteConfiguration
 import com.sanzenkai.mangatracker.core.domain.model.TrackedChapter
 import com.sanzenkai.mangatracker.core.domain.model.ValidatedChapterSnapshot
 import com.sanzenkai.mangatracker.core.domain.repository.MangaRepository
+import com.sanzenkai.mangatracker.core.localization.localizedMessage
 import com.sanzenkai.mangatracker.core.parser.api.ParserDocument
 import com.sanzenkai.mangatracker.core.parser.api.ParsedChapter
 import com.sanzenkai.mangatracker.core.parser.api.ParsedSitePage
@@ -38,6 +40,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -211,9 +214,104 @@ class SiteDiscoveryViewModelTest {
             assertEquals("chapter-12", repository.registeredChapters?.single()?.sourceChapterKey)
             assertEquals("12", repository.registeredChapters?.single()?.normalizedNumber)
             assertEquals("new-manga-id", viewModel.uiState.value.registeredMangaId)
+            assertTrue(viewModel.uiState.value.shouldPromptForNotificationPermission)
         } finally {
             store.clear()
         }
+    }
+
+    @Test
+    fun recentWindowRegistrationUsesEnteredChapterAsBaselineOrReportsLatestFallback() = runTest {
+        data class RegistrationRun(
+            val chapterKeys: List<String>,
+            val entryChapterUrl: String?,
+            val messageBeforeRegistration: String?,
+            val messageAfterRegistration: String?,
+        )
+
+        suspend fun register(inputUrl: String): RegistrationRun {
+            val repository = RecordingMangaRepository()
+            val document = ParserDocument(
+                pageUrl = "https://example.test/manga/sample",
+                requestedUrl = inputUrl,
+                contentType = "text/html",
+                html = "<html><body>sample</body></html>",
+            )
+            val chapters = (10 downTo 8).map { number ->
+                ParsedChapter(
+                    sourceKey = "chapter-$number",
+                    label = "Chapter $number",
+                    url = "https://example.test/manga/sample/chapter-$number",
+                    publishedAtEpochMillis = null,
+                )
+            }
+            val parser = object : SiteParser {
+                override val id = "test.registration-window"
+
+                override fun match(document: ParserDocument) =
+                    ParserMatch(100, "controlled recent window")
+
+                override fun parse(document: ParserDocument) = SiteParseResult.Success(
+                    ParsedSitePage(
+                        title = "Sample Manga",
+                        originalCoverUrl = null,
+                        seriesUrl = "https://example.test/manga/sample",
+                        currentChapter = chapters.first(),
+                        chapters = chapters,
+                        isChapterListComplete = false,
+                        isLatestChapterKnown = true,
+                    ),
+                )
+            }
+            val viewModel = SiteDiscoveryViewModel(
+                mangaRepository = repository,
+                htmlFetcher = HtmlDocumentFetcher { HtmlFetchResult.Success(document) },
+                discoveryEngine = SiteDiscoveryEngine(ParserRegistry(setOf(parser))),
+                parserDispatcher = StandardTestDispatcher(testScheduler),
+                idGenerator = { "new-manga-id" },
+            )
+            val store = ViewModelStore().apply { put("discovery", viewModel) }
+            try {
+                viewModel.onUrlChanged(inputUrl)
+                viewModel.analyzePage()
+                advanceUntilIdle()
+                val messageBeforeRegistration = viewModel.uiState.value.message
+
+                viewModel.registerManga()
+                advanceUntilIdle()
+
+                return RegistrationRun(
+                    chapterKeys = repository.registeredChapters.orEmpty().map { it.sourceChapterKey },
+                    entryChapterUrl = repository.registeredManga?.entryChapterUrl,
+                    messageBeforeRegistration = messageBeforeRegistration,
+                    messageAfterRegistration = viewModel.uiState.value.message,
+                )
+            } finally {
+                store.clear()
+            }
+        }
+
+        val chapter10Url = "https://example.test/manga/sample/chapter-10"
+        val chapter9Url = "https://example.test/manga/sample/chapter-9"
+        val latest = register(chapter10Url)
+        assertEquals(listOf("chapter-10"), latest.chapterKeys)
+        assertEquals(chapter10Url, latest.entryChapterUrl)
+        assertNull(latest.messageBeforeRegistration)
+
+        val middle = register("$chapter9Url/#reader")
+        assertEquals(listOf("chapter-10", "chapter-9"), middle.chapterKeys)
+        assertEquals(chapter9Url, middle.entryChapterUrl)
+        assertNull(middle.messageBeforeRegistration)
+
+        val outside = register("https://example.test/manga/sample/chapter-3")
+        val fallbackNotice = localizedMessage(
+            english = "The chapter from this link was not found in the site's recent window. Registration will use the latest chapter found as its baseline.",
+            portugueseBrazilian = "O capítulo deste link não foi encontrado na janela recente do site. O cadastro usará o capítulo mais recente encontrado como referência.",
+        )
+        assertEquals(listOf("chapter-10"), outside.chapterKeys)
+        assertEquals(chapter10Url, outside.entryChapterUrl)
+        assertTrue(fallbackNotice in outside.messageBeforeRegistration.orEmpty())
+        assertTrue(fallbackNotice in outside.messageAfterRegistration.orEmpty())
     }
 
     @Test
@@ -393,6 +491,7 @@ class SiteDiscoveryViewModelTest {
             assertEquals(false, repository.registeredMonitoringEnabled)
             assertEquals(emptyList<String>(), scheduler.enqueuedMangaIds)
             assertEquals(listOf(document.pageUrl), repository.registeredChapters?.map { it.url })
+            assertFalse(viewModel.uiState.value.shouldPromptForNotificationPermission)
         } finally {
             store.clear()
         }
@@ -499,6 +598,9 @@ class SiteDiscoveryViewModelTest {
             error("Not used in this test")
 
         override fun observeCheckAttempts(mangaId: String): Flow<List<CheckAttempt>> = emptyFlow()
+
+        override fun observeMonitoringProblem(mangaId: String): Flow<MonitoringProblemSignals> =
+            flowOf(MonitoringProblemSignals.empty(mangaId))
 
         override suspend fun recordCheckAttempt(attempt: CheckAttempt) =
             error("Not used in this test")

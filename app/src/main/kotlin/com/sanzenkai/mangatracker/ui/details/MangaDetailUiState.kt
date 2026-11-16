@@ -9,6 +9,7 @@ data class MangaDetailUiState(
     val manga: Manga? = null,
     val chapters: List<TrackedChapter> = emptyList(),
     val monitoringSettings: MonitoringSettings? = null,
+    val isMonitoringProblem: Boolean = false,
     val isRefreshing: Boolean = false,
     val error: String? = null,
     val message: String? = null,

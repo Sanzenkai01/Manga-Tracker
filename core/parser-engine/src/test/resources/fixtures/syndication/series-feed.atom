@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Northwind Chronicles</title>
+  <link rel="alternate" href="https://fiction.test/manga/northwind-chronicles/"/>
+  <entry>
+    <title>Chapter 2: Winter</title>
+    <link rel="alternate" href="https://fiction.test/manga/northwind-chronicles/chapter-2/"/>
+    <updated>2026-11-14T10:00:00Z</updated>
+  </entry>
+  <entry>
+    <title>Chapter 1: Arrival</title>
+    <link rel="alternate" href="https://fiction.test/manga/northwind-chronicles/chapter-1/"/>
+    <updated>2026-11-13T10:00:00Z</updated>
+  </entry>
+</feed>

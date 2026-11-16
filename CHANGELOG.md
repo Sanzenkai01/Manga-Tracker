@@ -2,6 +2,62 @@
 
 Project changes are recorded here. Entries describe repository changes, not planned or unverified app behavior.
 
+## 2026-11-16 — Agrupando notificações por mangá
+
+### Alterações
+
+- Um capítulo novo continua usando a notificação individual existente. Dois ou mais capítulos no mesmo ciclo viram uma notificação com tag por mangá, título/capa, resumo numérico e acesso ao link do capítulo mais recente.
+- A ação agrupada marca apenas os IDs presentes naquele aviso; a leitura é persistida capítulo por capítulo. Receiver continua não exportado, e os PendingIntents continuam imutáveis e explícitos.
+- Os IDs completos de uma notificação agrupada são retornados ao coordenador para registrar os timestamps de entrega. Ao cancelar um capítulo, o aviso é reconstruído sem ele ou removido quando vazio; cancelamento por mangá continua funcionando. O resumo geral é baseado em mangás distintos.
+- Adicionados plurais em inglês e pt-BR. Não foram adicionadas permissões ou dependências.
+
+### Verificação
+
+- Passou: `.\gradlew.bat --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug` — **BUILD SUCCESSFUL**; 68 testes do app passaram, sem falhas, erros ou skips.
+- Os testes Robolectric cobrem notificação individual, grupo de três capítulos, resumo de dois mangás distintos, texto pt-BR, ação de leitura em lote, atualização/cancelamento de um membro do grupo e cancelamento das notificações de um mangá.
+
+## 2026-11-16 — Preparando CI e release
+
+### Alterações
+
+- Adicionado `.github/workflows/ci.yml` para `push` e `pull_request`, com JDK 17, cache Gradle e as tarefas solicitadas de teste, lint e build debug. O workflow aplica `chmod +x` ao Wrapper sem alterar seu modo rastreado no Git (`100644`).
+- O build `release` agora habilita R8 e redução de recursos. As regras ProGuard mantêm o construtor da implementação Room; OkHttp fornece suas regras de consumidor e os usos diretos de Jsoup/RE2J não exigiram regras adicionais.
+- Adicionado ícone adaptativo com camada monocromática e referências atualizadas no manifesto. Backup Android em nuvem e transferência entre dispositivos foram desativados explicitamente por alinhamento ao uso local-first; o backup JSON manual do app permanece disponível.
+- Os arquivos rastreados `Manga-Tracker-source.zip` e `mangatrackericon.png` não foram removidos nem movidos; a proposta aguarda aprovação.
+
+### Verificação
+
+- Passou: `.\gradlew.bat --no-daemon :app:assembleRelease` — **BUILD SUCCESSFUL**; APK `app/build/outputs/apk/release/app-release-unsigned.apk` gerado.
+- Passou: `.\gradlew.bat --no-daemon :core:localization:test :core:data:testDebugUnitTest :core:parser-engine:test :parsers:site-adapters:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug` — **BUILD SUCCESSFUL**.
+- Após as regras de backup, passou: `.\gradlew.bat --no-daemon :app:lintDebug :app:assembleDebug :app:assembleRelease` — **BUILD SUCCESSFUL**.
+- `jarsigner -verify` confirmou que o APK release está sem assinatura. O build emitiu o aviso conhecido de compatibilidade XML do SDK e não conseguiu remover símbolos de duas bibliotecas nativas, que foram empacotadas sem strip.
+
+## 2026-11-16 — Detectando feeds RSS e Atom
+
+### Alterações
+
+- `:core:parser-engine` reconhece links alternativos RSS/Atom do mesmo host e usa `/feed/` como pista quando encontra marcadores WordPress. `SyndicationFeedParser` transforma itens RSS/Atom fornecidos em `ParserDocument.supplementalData` em uma janela recente validada pelo contrato `ParsedSitePage`.
+- Entradas são associadas à série e ordenadas por número de capítulo ou data. Feed ausente, vazio, truncado, parcialmente interpretado ou sem ordem comprovável resulta em configuração necessária, nunca em sucesso vazio. O parser foi adicionado ao registro padrão.
+- Nenhuma requisição HTTP ou dependência nova foi adicionada; a integração de aquisição segura do feed fica para a etapa seguinte.
+
+### Verificação
+
+- Passou: `.\gradlew.bat --no-daemon :core:parser-engine:test :parsers:site-adapters:test` — **BUILD SUCCESSFUL**; testes JVM do parser e dos adapters passaram com fixtures locais sanitizadas.
+- Não houve requisição a feeds/sites reais. A etapa valida parsing e detecção, não a obtenção remota end-to-end.
+
+## 2026-11-16 — Indicando problemas no monitoramento
+
+### Alterações
+
+- O estado de monitoramento com problema é derivado das tentativas Room: cinco falhas elegíveis consecutivas ou mais de três dias desde o último sucesso, desde que exista falha de servidor ou parsing. Falhas exclusivamente de rede não contam; um sucesso encerra o episódio.
+- A biblioteca mostra um selo e os detalhes explicam que a página pode ter mudado e sugerem configuração manual. Notificações usam canal próprio, respeitam permissão/canal bloqueados e são deduplicadas por episódio no DataStore.
+- A projeção foi adicionada sem coluna ou migração Room; permissões e dependências não foram alteradas. Strings em inglês e pt-BR foram atualizadas.
+
+### Verificação
+
+- Passou: `.\gradlew.bat --no-daemon :core:domain:test :core:data:test :app:testDebugUnitTest :core:data:lintDebug :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest` — **BUILD SUCCESSFUL**; testes unitários, lint dos módulos `core:data` e `app`, APK debug e APK de testes Android foram concluídos.
+- O build emitiu o aviso conhecido de incompatibilidade de versão XML do Android SDK. O APK de testes Compose foi compilado, mas não executado em dispositivo/emulador nesta tarefa.
+
 ## 2026-11-15 — Configurando o intervalo de monitoramento
 
 ### Alterações
@@ -27,6 +83,46 @@ Project changes are recorded here. Entries describe repository changes, not plan
 
 - Passou: `.\gradlew.bat --no-daemon :app:testDebugUnitTest :app:lintDebug` — **BUILD SUCCESSFUL**; testes unitários do app e lint passaram. O teste de ViewModel cobre atualização assíncrona, exclusão de mangá pausado e resumo de sucesso/falha.
 - O build emitiu o aviso conhecido de incompatibilidade de versão XML do Android SDK. Não foi realizado refresh contra sites ao vivo nem teste em dispositivo.
+
+## 2026-11-15 — Corrigindo a normalização e o delta de capítulos
+
+### Alterações
+
+- A extração do número do capítulo e o cálculo do delta de janelas recentes foram movidos para regras puras em `:core:domain`; a camada de app agora delega a normalização ao domínio.
+- Rótulos priorizam o número após `chapter`, `capítulo`, `cap.`, `ep.` e marcadores equivalentes; sem marcador, usa-se o último número isolado. Decimais com ponto ou vírgula são preservados para comparação e sufixos alfabéticos não são incorporados.
+- A correspondência por `sourceKey` continua sendo a linha de base preferencial. Quando o site troca as chaves, o fallback numérico ignora capítulos sem número em vez de invalidar toda a checagem; capítulos especiais/extras continuam comparados por chave.
+- Não houve alteração de schema Room nem de dados persistidos.
+
+### Verificação
+
+- Passou: `.\gradlew.bat --no-daemon :core:domain:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug` — **BUILD SUCCESSFUL**; 64 testes JVM passaram (6 domain, 58 app), sem falhas, erros ou skips; lint debug e montagem do APK debug passaram.
+- A execução usou JDK 17 e Android SDK configurados no ambiente. O build emitiu o aviso conhecido de incompatibilidade de versão XML do SDK. Não foi realizado teste em dispositivo nem refresh ao vivo.
+
+## 2026-11-15 — Solicitando permissão de notificações em contexto
+
+### Alterações
+
+- Depois do primeiro cadastro bem-sucedido de mangá com monitoramento ativo, uma justificativa contextual precede a solicitação de `POST_NOTIFICATIONS` no Android 13+. A tentativa fica registrada localmente; uma recusa não dispara novos pedidos automáticos.
+- A biblioteca exibe um aviso discreto quando há mangá monitorado e notificações do app ou o canal estão bloqueados, com ação para abrir as configurações de notificações do Android.
+- As mensagens foram adicionadas em inglês e pt-BR. Não foram adicionadas permissões nem dependências.
+
+### Verificação
+
+- Passou: `gradlew.bat --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest` — **BUILD SUCCESSFUL**; 56 testes unitários do app passaram, sem falhas, erros ou skips; lint, APK debug e compilação do APK de testes Android passaram.
+- A execução do teste Compose requer um emulador/dispositivo; `adb devices -l` não listou dispositivos e o executável do emulador não está instalado. O teste Compose foi compilado, não executado. O build emitiu o aviso conhecido de incompatibilidade de versão XML do SDK.
+
+## 2026-03-19 — Usando o capítulo informado como linha de base
+
+### Alterações
+
+- No cadastro por link, quando o capítulo informado é identificado em uma janela recente validada, ele passa a ser a linha de base e o app salva esse capítulo e os mais novos da janela como não lidos.
+- Esses capítulos iniciais não geram notificações retroativas. Se o capítulo informado não estiver na janela ou a identidade da URL for ambígua, o comportamento anterior é mantido e a tela informa o fallback para o capítulo mais recente.
+- Falhas de parsing não iniciam o cadastro nem alteram dados existentes. Não foi necessária migração Room.
+
+### Verificação
+
+- Passou: `gradlew.bat --no-daemon :app:testDebugUnitTest :core:data:testDebugUnitTest :app:lintDebug :core:data:lintDebug :app:assembleDebug` — **BUILD SUCCESSFUL**; 94 testes passaram (54 app, 40 core/data), sem falhas, erros ou skips. Lint dos dois módulos e montagem do APK debug passaram.
+- O build emitiu o aviso conhecido de incompatibilidade de versão XML entre ferramentas do Android SDK. Não foi realizado teste em dispositivo nem refresh ao vivo.
 
 ## 2026-11-15 — Preenchendo metadados em mangás existentes
 

@@ -8,9 +8,11 @@ import com.sanzenkai.mangatracker.core.data.local.MIGRATION_2_3
 import com.sanzenkai.mangatracker.core.data.network.SafeHtmlFetcher
 import com.sanzenkai.mangatracker.core.data.network.SafeJsonFetcher
 import com.sanzenkai.mangatracker.core.data.preferences.DataStoreLibraryPreferencesRepository
+import com.sanzenkai.mangatracker.core.data.preferences.DataStoreSiteProblemNotificationRepository
 import com.sanzenkai.mangatracker.core.data.repository.RoomMangaRepository
 import com.sanzenkai.mangatracker.core.domain.repository.LibraryPreferencesRepository
 import com.sanzenkai.mangatracker.core.domain.repository.MangaRepository
+import com.sanzenkai.mangatracker.core.domain.repository.SiteProblemNotificationRepository
 
 class DataContainer(context: Context) {
     val safeHtmlFetcher = SafeHtmlFetcher()
@@ -30,6 +32,8 @@ class DataContainer(context: Context) {
     val mangaRepository: MangaRepository = RoomMangaRepository(database)
     val libraryPreferencesRepository: LibraryPreferencesRepository =
         DataStoreLibraryPreferencesRepository(context)
+    val siteProblemNotificationRepository: SiteProblemNotificationRepository =
+        DataStoreSiteProblemNotificationRepository(context)
 
     private companion object {
         const val DATABASE_NAME = "manga_tracker.db"

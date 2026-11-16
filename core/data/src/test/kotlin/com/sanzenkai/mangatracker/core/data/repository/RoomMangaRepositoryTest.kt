@@ -665,6 +665,62 @@ class RoomMangaRepositoryTest {
     }
 
     @Test
+    fun monitoringProblemQueryCountsOnlyEligibleFailuresAfterTheLatestSuccess() = runBlocking {
+        repository.saveManga(testManga)
+        val networkOnlyManga = testManga.copy(
+            id = "network-only-manga",
+            title = "Network only",
+            seriesUrl = "https://example.test/manga/network-only",
+            entryChapterUrl = "https://example.test/manga/network-only/chapter-1",
+        )
+        repository.saveManga(networkOnlyManga)
+
+        repository.recordCheckAttempt(checkAttempt("success-before-failures", 100L, 110L, "SUCCESS", null))
+        repository.recordCheckAttempt(checkAttempt("network-failure", 120L, 130L, "FAILURE", "NETWORK_ERROR"))
+        repository.recordCheckAttempt(checkAttempt("server-failure-1", 140L, 141L, "FAILURE", "PAGE_UNAVAILABLE"))
+        repository.recordCheckAttempt(checkAttempt("server-failure-2", 150L, 151L, "FAILURE", "HTTP_ERROR"))
+        repository.recordCheckAttempt(checkAttempt("parse-failure", 160L, 161L, "FAILURE", "INVALID_HTML"))
+        repository.recordCheckAttempt(
+            checkAttempt(
+                "incomplete-failure",
+                170L,
+                171L,
+                "INCOMPLETE_LIST",
+                "INCOMPLETE_CHAPTER_LIST",
+            ),
+        )
+        repository.recordCheckAttempt(
+            checkAttempt(
+                id = "network-only",
+                startedAt = 120L,
+                finishedAt = 130L,
+                outcome = "FAILURE",
+                errorCode = "NETWORK_ERROR",
+                mangaId = networkOnlyManga.id,
+            ),
+        )
+
+        val problemSignals = repository.observeMonitoringProblem(testManga.id).first()
+        val networkSignals = repository.observeMonitoringProblem(networkOnlyManga.id).first()
+
+        assertEquals(4, problemSignals.siteFailureCount)
+        assertEquals(110L, problemSignals.lastSuccessAtEpochMillis)
+        assertEquals("server-failure-1", problemSignals.episodeId)
+        assertEquals(141L, problemSignals.firstSiteFailureAtEpochMillis)
+        assertEquals(0, networkSignals.siteFailureCount)
+        assertNull(networkSignals.episodeId)
+
+        repository.recordCheckAttempt(checkAttempt("server-failure-3", 180L, 181L, "FAILURE", "NO_MATCH"))
+        assertEquals(5, repository.observeMonitoringProblem(testManga.id).first().siteFailureCount)
+
+        repository.recordCheckAttempt(checkAttempt("success-resets-episode", 190L, 200L, "SUCCESS", null))
+        val resetSignals = repository.observeMonitoringProblem(testManga.id).first()
+        assertEquals(0, resetSignals.siteFailureCount)
+        assertNull(resetSignals.episodeId)
+        assertEquals(200L, resetSignals.lastSuccessAtEpochMillis)
+    }
+
+    @Test
     fun metadataRefreshFillsMissingFieldsWithoutReplacingSavedValues() = runBlocking {
         val mangaWithMissingMetadata = testManga.copy(
             id = "manga-with-missing-metadata",
@@ -989,6 +1045,71 @@ class RoomMangaRepositoryTest {
     }
 
     @Test
+    fun registeringRecentWindowBaselinesPersistsSelectedChaptersUnreadWithoutNotifications() = runBlocking {
+        data class RegistrationScenario(
+            val name: String,
+            val entryChapterKey: String,
+            val initialChapters: List<DiscoveredChapter>,
+            val expectedChapterKeys: Set<String>,
+        )
+
+        val scenarios = listOf(
+            RegistrationScenario(
+                name = "latest",
+                entryChapterKey = "chapter-10",
+                initialChapters = listOf(testChapter("chapter-10")),
+                expectedChapterKeys = setOf("chapter-10"),
+            ),
+            RegistrationScenario(
+                name = "middle",
+                entryChapterKey = "chapter-9",
+                initialChapters = listOf(testChapter("chapter-10"), testChapter("chapter-9")),
+                expectedChapterKeys = setOf("chapter-10", "chapter-9"),
+            ),
+            RegistrationScenario(
+                name = "outside-fallback",
+                entryChapterKey = "chapter-10",
+                initialChapters = listOf(testChapter("chapter-10")),
+                expectedChapterKeys = setOf("chapter-10"),
+            ),
+        )
+
+        scenarios.forEach { scenario ->
+            val host = "${scenario.name}.example.test"
+            val initialChapters = scenario.initialChapters.map { chapter ->
+                chapter.copy(url = "https://$host/${chapter.normalizedNumber}")
+            }
+            val manga = testManga.copy(
+                id = "manga-${scenario.name}",
+                title = "Test manga ${scenario.name}",
+                seriesUrl = "https://$host/series",
+                entryChapterUrl = initialChapters
+                    .single { it.sourceChapterKey == scenario.entryChapterKey }
+                    .url,
+                normalizedDomain = host,
+            )
+            val result = repository.registerManga(
+                manga = manga,
+                initialChapters = initialChapters,
+                detectedAtEpochMillis = 10L,
+            )
+
+            assertEquals(
+                MangaRegistrationResult.Added(manga.id, initialChapters.size),
+                result,
+            )
+            val savedChapters = repository.observeChapters(manga.id).first()
+            assertEquals(
+                scenario.expectedChapterKeys,
+                savedChapters.map { it.sourceChapterKey }.toSet(),
+            )
+            assertTrue(savedChapters.all { !it.isRead })
+            assertTrue(repository.getPendingChapterNotifications(manga.id).isEmpty())
+            assertEquals(manga.entryChapterUrl, repository.observeManga(manga.id).first()?.entryChapterUrl)
+        }
+    }
+
+    @Test
     fun registeringFromAnIncompleteSiteCanSeedItsKnownCurrentChapter() = runBlocking {
         val result = repository.registerManga(
             manga = testManga,
@@ -1032,6 +1153,23 @@ class RoomMangaRepositoryTest {
             nextId += 1
             "new-chapter-$nextId"
         }
+
+    private fun checkAttempt(
+        id: String,
+        startedAt: Long,
+        finishedAt: Long,
+        outcome: String,
+        errorCode: String?,
+        mangaId: String = testManga.id,
+    ) = CheckAttempt(
+        id = id,
+        mangaId = mangaId,
+        trigger = "AUTOMATIC",
+        startedAtEpochMillis = startedAt,
+        finishedAtEpochMillis = finishedAt,
+        outcome = outcome,
+        errorCode = errorCode,
+    )
 
     private fun repositoryAfterMigration() = RoomMangaRepository(database)
 

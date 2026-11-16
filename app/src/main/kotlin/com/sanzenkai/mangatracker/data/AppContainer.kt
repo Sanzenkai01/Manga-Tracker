@@ -47,6 +47,7 @@ class AppContainer(context: Context) {
         jsonFetcher = SafeJsonFetcher(allowedHosts = setOf("roliascan.com")),
     )
     val mangaRepository: MangaRepository = dataContainer.mangaRepository
+    private val siteProblemNotificationRepository = dataContainer.siteProblemNotificationRepository
     val libraryPreferencesRepository: LibraryPreferencesRepository =
         dataContainer.libraryPreferencesRepository
     private val mangaBackupExporter: MangaBackupExporter = JsonMangaBackupExporter(
@@ -68,6 +69,7 @@ class AppContainer(context: Context) {
         htmlFetcher = siteDocumentFetcher,
         discoveryEngine = discoveryEngine,
         notificationPublisher = chapterNotificationPublisher,
+        siteProblemNotificationRepository = siteProblemNotificationRepository,
     )
     val siteDiscoveryViewModelFactory: ViewModelProvider.Factory =
         SiteDiscoveryViewModelFactory(

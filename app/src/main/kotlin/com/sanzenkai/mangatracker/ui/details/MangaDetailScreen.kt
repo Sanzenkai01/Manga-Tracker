@@ -126,6 +126,15 @@ private fun MangaDetailsContent(
         item {
             MangaDetailsHeader(manga, chapters, monitoringSettings)
         }
+        if (state.isMonitoringProblem) {
+            item {
+                Text(
+                    text = stringResource(R.string.monitoring_problem_explanation),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),

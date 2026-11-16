@@ -16,6 +16,7 @@ data class SiteDiscoveryUiState(
     val isManualConfigurationVisible: Boolean = false,
     val manualTestPassed: Boolean = false,
     val registeredMangaId: String? = null,
+    val shouldPromptForNotificationPermission: Boolean = false,
     val message: String? = null,
     val error: String? = null,
 ) {

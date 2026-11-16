@@ -11,6 +11,8 @@ import com.sanzenkai.mangatracker.core.domain.model.MangaRegistrationResult
 import com.sanzenkai.mangatracker.core.domain.repository.MangaRepository
 import com.sanzenkai.mangatracker.core.localization.localizedMessage
 import com.sanzenkai.mangatracker.core.parser.api.ParserDocument
+import com.sanzenkai.mangatracker.core.parser.api.ParsedChapter
+import com.sanzenkai.mangatracker.core.parser.api.ParsedSitePage
 import com.sanzenkai.mangatracker.core.parser.api.SiteParseIssue
 import com.sanzenkai.mangatracker.core.parser.api.SiteParseResult
 import com.sanzenkai.mangatracker.core.parser.engine.DomainNormalizer
@@ -30,6 +32,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.net.URI
+import java.net.URISyntaxException
 import java.util.UUID
 
 class SiteDiscoveryViewModel(
@@ -66,6 +70,7 @@ class SiteDiscoveryViewModel(
             isManualConfigurationVisible = false,
             manualTestPassed = false,
             registeredMangaId = null,
+            shouldPromptForNotificationPermission = false,
             message = null,
             error = null,
             isLoading = false,
@@ -82,6 +87,7 @@ class SiteDiscoveryViewModel(
             manualConfiguration = configuration,
             manualTestPassed = false,
             registeredMangaId = null,
+            shouldPromptForNotificationPermission = false,
             message = null,
             error = null,
             isTestingConfiguration = false,
@@ -128,13 +134,8 @@ class SiteDiscoveryViewModel(
             )
             return
         }
-        val chapters = (if (page.isChapterListComplete && !page.isLatestChapterKnown) {
-            page.chapters + currentChapter
-        } else {
-            listOf(currentChapter)
-        })
-            .distinctBy { it.sourceKey }
-            .map { it.toDiscoveredChapter() }
+        val chapterSelection = selectRegistrationChapters(state.url, page)
+        val chapters = chapterSelection.chapters.map { it.toDiscoveredChapter() }
         if (chapters.isEmpty()) {
             _uiState.value = state.copy(
                 error = localizedMessage(
@@ -149,6 +150,7 @@ class SiteDiscoveryViewModel(
             _uiState.value = _uiState.value.copy(
                 isRegisteringManga = true,
                 registeredMangaId = null,
+                shouldPromptForNotificationPermission = false,
                 error = null,
                 message = null,
             )
@@ -178,7 +180,7 @@ class SiteDiscoveryViewModel(
                             title = title,
                             originalCoverUrl = page.originalCoverUrl,
                             seriesUrl = seriesUrl,
-                            entryChapterUrl = currentChapter.url,
+                            entryChapterUrl = chapterSelection.entryChapter.url,
                             normalizedDomain = normalizedHost,
                             createdAtEpochMillis = now,
                             updatedAtEpochMillis = now,
@@ -195,26 +197,34 @@ class SiteDiscoveryViewModel(
                         _uiState.value = _uiState.value.copy(
                             isRegisteringManga = false,
                             registeredMangaId = registration.mangaId,
-                            message = if (registration.chapterCount == 1) {
-                                localizedMessage(
-                                    english = "Manga added with 1 chapter.",
-                                    portugueseBrazilian = "Mangá adicionado com 1 capítulo.",
-                                )
-                            } else {
-                                localizedMessage(
-                                    english = "Manga added with ${registration.chapterCount} chapters.",
-                                    portugueseBrazilian = "Mangá adicionado com ${registration.chapterCount} capítulos.",
-                                )
-                            },
+                            shouldPromptForNotificationPermission = monitoringEnabled,
+                            message = withRegistrationFallbackNotice(
+                                successMessage = if (registration.chapterCount == 1) {
+                                    localizedMessage(
+                                        english = "Manga added with 1 chapter.",
+                                        portugueseBrazilian = "Mangá adicionado com 1 capítulo.",
+                                    )
+                                } else {
+                                    localizedMessage(
+                                        english = "Manga added with ${registration.chapterCount} chapters.",
+                                        portugueseBrazilian = "Mangá adicionado com ${registration.chapterCount} capítulos.",
+                                    )
+                                },
+                                chapterSelection = chapterSelection,
+                            ),
                         )
                     }
                     is MangaRegistrationResult.AlreadyTracked -> {
                         _uiState.value = _uiState.value.copy(
                             isRegisteringManga = false,
                             registeredMangaId = registration.mangaId,
-                            message = localizedMessage(
-                                english = "This manga is already in your library.",
-                                portugueseBrazilian = "Este mangá já está na sua biblioteca.",
+                            shouldPromptForNotificationPermission = false,
+                            message = withRegistrationFallbackNotice(
+                                successMessage = localizedMessage(
+                                    english = "This manga is already in your library.",
+                                    portugueseBrazilian = "Este mangá já está na sua biblioteca.",
+                                ),
+                                chapterSelection = chapterSelection,
                             ),
                         )
                     }
@@ -306,7 +316,7 @@ class SiteDiscoveryViewModel(
                         result = result,
                         manualConfiguration = manualConfiguration,
                         isManualConfigurationVisible = false,
-                        message = null,
+                        message = registrationFallbackMessage(inputUrl, result),
                     )
                 }
             }
@@ -354,22 +364,26 @@ class SiteDiscoveryViewModel(
                 return@launch
             }
             val successfulPage = (result as? SiteParseResult.Success)?.page
+            val configurationMessage = when {
+                successfulPage == null -> null
+                !successfulPage.isChapterListComplete ->
+                    localizedMessage(
+                        english = "Configured fields were found. Add and test a chapter-list selector before treating the result as complete.",
+                        portugueseBrazilian = "Os campos configurados foram encontrados. Adicione e teste um seletor da lista de capítulos antes de considerar o resultado completo.",
+                    )
+                else -> localizedMessage(
+                    english = "Configuration passed with a complete chapter list.",
+                    portugueseBrazilian = "Configuração aprovada com uma lista completa de capítulos.",
+                )
+            }
+            val registrationWarning = registrationFallbackMessage(_uiState.value.url, result)
             _uiState.value = _uiState.value.copy(
                 isTestingConfiguration = false,
                 result = result,
                 manualTestPassed = successfulPage != null,
-                message = when {
-                    successfulPage == null -> null
-                    !successfulPage.isChapterListComplete ->
-                        localizedMessage(
-                            english = "Configured fields were found. Add and test a chapter-list selector before treating the result as complete.",
-                            portugueseBrazilian = "Os campos configurados foram encontrados. Adicione e teste um seletor da lista de capítulos antes de considerar o resultado completo.",
-                        )
-                    else -> localizedMessage(
-                        english = "Configuration passed with a complete chapter list.",
-                        portugueseBrazilian = "Configuração aprovada com uma lista completa de capítulos.",
-                    )
-                },
+                message = listOfNotNull(configurationMessage, registrationWarning)
+                    .takeIf { it.isNotEmpty() }
+                    ?.joinToString(separator = "\n"),
                 error = if (result is SiteParseResult.Failure) result.reason else null,
             )
         }
@@ -465,7 +479,114 @@ class SiteDiscoveryViewModel(
         }
     }
 
+    private fun registrationFallbackMessage(
+        inputUrl: String,
+        result: SiteParseResult,
+    ): String? {
+        val candidate = SiteDiscoveryUiState(
+            url = inputUrl,
+            result = result,
+        ).registrationCandidate ?: return null
+        return latestWindowFallbackMessage()
+            .takeIf { selectRegistrationChapters(inputUrl, candidate).usedLatestFallback }
+    }
+
+    private fun selectRegistrationChapters(
+        inputUrl: String,
+        page: ParsedSitePage,
+    ): RegistrationChapterSelection {
+        val currentChapter = checkNotNull(page.currentChapter)
+        if (page.isLatestChapterKnown) {
+            val latestFirstWindow = (listOf(currentChapter) + page.chapters)
+                .distinctBy(ParsedChapter::sourceKey)
+            val inputIdentity = chapterUrlIdentity(inputUrl)
+            val matchingChapters = inputIdentity?.let { identity ->
+                latestFirstWindow.filter { chapterUrlIdentity(it.url) == identity }
+            }.orEmpty()
+            val entryChapter = matchingChapters.singleOrNull()
+            if (entryChapter == null) {
+                return RegistrationChapterSelection(
+                    entryChapter = currentChapter,
+                    chapters = listOf(currentChapter),
+                    usedLatestFallback = true,
+                )
+            }
+            val entryIndex = latestFirstWindow.indexOfFirst { it.sourceKey == entryChapter.sourceKey }
+            return RegistrationChapterSelection(
+                entryChapter = entryChapter,
+                chapters = latestFirstWindow.take(entryIndex + 1),
+                usedLatestFallback = false,
+            )
+        }
+
+        val chapters = if (page.isChapterListComplete) {
+            (page.chapters + currentChapter).distinctBy(ParsedChapter::sourceKey)
+        } else {
+            listOf(currentChapter)
+        }
+        return RegistrationChapterSelection(
+            entryChapter = currentChapter,
+            chapters = chapters,
+            usedLatestFallback = false,
+        )
+    }
+
+    private fun withRegistrationFallbackNotice(
+        successMessage: String,
+        chapterSelection: RegistrationChapterSelection,
+    ): String =
+        if (chapterSelection.usedLatestFallback) {
+            "$successMessage\n${latestWindowFallbackMessage()}"
+        } else {
+            successMessage
+        }
+
+    private fun latestWindowFallbackMessage(): String = localizedMessage(
+        english = "The chapter from this link was not found in the site's recent window. Registration will use the latest chapter found as its baseline.",
+        portugueseBrazilian = "O capítulo deste link não foi encontrado na janela recente do site. O cadastro usará o capítulo mais recente encontrado como referência.",
+    )
+
+    private fun chapterUrlIdentity(rawUrl: String): ChapterUrlIdentity? {
+        val uri = try {
+            URI(rawUrl.trim()).normalize()
+        } catch (_: URISyntaxException) {
+            return null
+        }
+        val scheme = uri.scheme?.lowercase() ?: return null
+        val host = DomainNormalizer.normalizedHostFromUrl(rawUrl) ?: return null
+        val port = when {
+            scheme == "http" && uri.port == 80 -> -1
+            scheme == "https" && uri.port == 443 -> -1
+            else -> uri.port
+        }
+        val path = uri.rawPath.orEmpty()
+            .ifEmpty { "/" }
+            .trimEnd('/')
+            .ifEmpty { "/" }
+        return ChapterUrlIdentity(
+            scheme = scheme,
+            host = host,
+            port = port,
+            path = path,
+            query = uri.rawQuery,
+        )
+    }
+
     private companion object {
         const val CONFIGURATION_FORMAT_VERSION = 1
     }
+
+    private data class RegistrationChapterSelection(
+        val entryChapter: ParsedChapter,
+        val chapters: List<ParsedChapter>,
+        val usedLatestFallback: Boolean,
+    )
+
+    private data class ChapterUrlIdentity(
+        val scheme: String,
+        val host: String,
+        val port: Int,
+        val path: String,
+        val query: String?,
+    )
 }
