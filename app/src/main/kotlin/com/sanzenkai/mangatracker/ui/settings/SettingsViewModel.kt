@@ -7,9 +7,12 @@ import androidx.lifecycle.viewModelScope
 import com.sanzenkai.mangatracker.core.localization.localizedMessage
 import com.sanzenkai.mangatracker.core.domain.model.AppThemeMode
 import com.sanzenkai.mangatracker.core.domain.model.LibraryLayout
+import com.sanzenkai.mangatracker.core.domain.model.MonitoringInterval
 import com.sanzenkai.mangatracker.core.domain.repository.LibraryPreferencesRepository
 import com.sanzenkai.mangatracker.data.backup.MangaBackupExporter
 import com.sanzenkai.mangatracker.data.backup.MangaBackupImporter
+import com.sanzenkai.mangatracker.monitoring.MonitoringScheduler
+import com.sanzenkai.mangatracker.monitoring.NoOpMonitoringScheduler
 import java.io.IOException
 import org.json.JSONException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,6 +26,7 @@ class SettingsViewModel(
     private val preferencesRepository: LibraryPreferencesRepository,
     private val mangaBackupExporter: MangaBackupExporter,
     private val mangaBackupImporter: MangaBackupImporter,
+    private val monitoringScheduler: MonitoringScheduler = NoOpMonitoringScheduler,
 ) : ViewModel() {
     private val actionError = MutableStateFlow<String?>(null)
     private val backupState = MutableStateFlow(BackupUiState())
@@ -30,13 +34,15 @@ class SettingsViewModel(
     val uiState = combine(
         preferencesRepository.observeLayout(),
         preferencesRepository.observeThemeMode(),
+        preferencesRepository.observeMonitoringInterval(),
         actionError,
         backupState,
-    ) { layout, themeMode, error, backup ->
+    ) { layout, themeMode, monitoringInterval, error, backup ->
         SettingsUiState(
             isLoading = false,
             libraryLayout = layout,
             themeMode = themeMode,
+            monitoringInterval = monitoringInterval,
             error = error,
             isBackupInProgress = backup.isInProgress,
             isBackupImporting = backup.isImporting,
@@ -84,6 +90,30 @@ class SettingsViewModel(
                 actionError.value = localizedMessage(
                     english = "The app theme could not be saved.",
                     portugueseBrazilian = "Não foi possível salvar o tema do aplicativo.",
+                )
+            }
+        }
+    }
+
+    fun setMonitoringInterval(interval: MonitoringInterval) {
+        viewModelScope.launch {
+            try {
+                preferencesRepository.setMonitoringInterval(interval)
+            } catch (error: IOException) {
+                actionError.value = localizedMessage(
+                    english = "The monitoring interval could not be saved.",
+                    portugueseBrazilian = "Não foi possível salvar o intervalo de monitoramento.",
+                )
+                return@launch
+            }
+
+            try {
+                monitoringScheduler.ensurePeriodicMonitoring(interval)
+                actionError.value = null
+            } catch (error: IllegalStateException) {
+                actionError.value = localizedMessage(
+                    english = "The interval was saved, but the periodic schedule could not be updated.",
+                    portugueseBrazilian = "O intervalo foi salvo, mas não foi possível atualizar o agendamento periódico.",
                 )
             }
         }

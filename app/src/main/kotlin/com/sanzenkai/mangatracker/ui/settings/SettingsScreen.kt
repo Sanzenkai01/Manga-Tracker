@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import com.sanzenkai.mangatracker.R
 import com.sanzenkai.mangatracker.core.domain.model.AppThemeMode
 import com.sanzenkai.mangatracker.core.domain.model.LibraryLayout
+import com.sanzenkai.mangatracker.core.domain.model.MonitoringInterval
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,6 +55,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onLayoutChanged: (LibraryLayout) -> Unit,
     onThemeModeChanged: (AppThemeMode) -> Unit,
+    onMonitoringIntervalChanged: (MonitoringInterval) -> Unit,
     onEnableNotifications: () -> Unit,
     onOpenNotificationSettings: () -> Unit,
     onConfigureSite: () -> Unit,
@@ -137,6 +139,21 @@ fun SettingsScreen(
                     }
                 }
                 SettingsPreferenceCard(
+                    title = stringResource(R.string.settings_monitoring_interval_title),
+                    description = stringResource(R.string.settings_monitoring_limitation),
+                ) {
+                    Column(Modifier.selectableGroup()) {
+                        MonitoringInterval.values().forEachIndexed { index, interval ->
+                            if (index > 0) HorizontalDivider()
+                            SettingsRadioOption(
+                                title = stringResource(interval.labelResource()),
+                                selected = state.monitoringInterval == interval,
+                                onClick = { onMonitoringIntervalChanged(interval) },
+                            )
+                        }
+                    }
+                }
+                SettingsPreferenceCard(
                     title = stringResource(R.string.settings_backup_title),
                     description = stringResource(R.string.settings_backup_description),
                 ) {
@@ -209,11 +226,6 @@ fun SettingsScreen(
                     text = stringResource(R.string.settings_local_storage),
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                Text(
-                    text = stringResource(R.string.settings_monitoring_limitation),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Text(
                     text = stringResource(R.string.settings_notifications_title),
@@ -254,6 +266,15 @@ fun SettingsScreen(
         }
     }
 }
+
+private fun MonitoringInterval.labelResource(): Int =
+    when (this) {
+        MonitoringInterval.ONE_HOUR -> R.string.settings_monitoring_interval_1h
+        MonitoringInterval.THREE_HOURS -> R.string.settings_monitoring_interval_3h
+        MonitoringInterval.SIX_HOURS -> R.string.settings_monitoring_interval_6h
+        MonitoringInterval.TWELVE_HOURS -> R.string.settings_monitoring_interval_12h
+        MonitoringInterval.TWENTY_FOUR_HOURS -> R.string.settings_monitoring_interval_24h
+    }
 
 @Composable
 private fun SettingsPreferenceCard(

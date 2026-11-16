@@ -2,6 +2,19 @@
 
 Project changes are recorded here. Entries describe repository changes, not planned or unverified app behavior.
 
+## 2026-11-15 — Configurando o intervalo de monitoramento
+
+### Alterações
+
+- As Configurações oferecem intervalos de 1, 3, 6, 12 e 24 horas; uma hora continua sendo o padrão. A escolha fica no DataStore e é lida novamente para restaurar o agendamento único do WorkManager após reiniciar o app.
+- Mudanças atualizam o trabalho periódico usando `ExistingPeriodicWorkPolicy.UPDATE`, preservando conectividade, bateria não baixa e a explicação de que o Android pode adiar as verificações. Não foram adicionadas permissões nem dependências.
+
+### Verificação
+
+- Passou: `.\gradlew.bat --no-daemon :core:domain:test :core:data:testDebugUnitTest :app:testDebugUnitTest` — **BUILD SUCCESSFUL**, incluindo testes do DataStore, SettingsViewModel, WorkManagerMonitoringScheduler e as regressões do app.
+- Passou: `.\gradlew.bat --no-daemon :core:data:lintDebug :app:lintDebug` — **BUILD SUCCESSFUL**.
+- O build emitiu o aviso conhecido de incompatibilidade de versão XML do Android SDK. A primeira execução após localizar o JDK 17 encontrou expectativas antigas no teste de strings; elas foram atualizadas para a mensagem compatível com intervalo configurável e o comando acima passou.
+
 ## 2026-11-15 — Preenchendo metadados em mangás existentes
 
 ### Alterações

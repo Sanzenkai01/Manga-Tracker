@@ -44,7 +44,7 @@ class LanguageResourcesTest {
             context.getString(R.string.settings_language_follow_system),
         )
         assertEquals(
-            "The app looks for new chapters about once an hour when there is internet access and enough battery. Android may delay the search.",
+            "The app checks using the selected interval when internet and enough battery are available. Android may delay checks.",
             context.getString(R.string.settings_monitoring_limitation),
         )
         assertFalse(context.getString(R.string.settings_monitoring_limitation).contains("WorkManager"))
@@ -81,7 +81,7 @@ class LanguageResourcesTest {
             context.getString(R.string.site_incomplete_list_registration_note),
         )
         assertEquals(
-            "O app procura capítulos novos mais ou menos uma vez por hora, quando há internet e bateria suficiente. O Android pode atrasar a busca.",
+            "O app faz a busca no intervalo escolhido quando há internet e bateria suficiente. O Android pode adiar as buscas.",
             context.getString(R.string.settings_monitoring_limitation),
         )
         assertEquals(

@@ -1,6 +1,7 @@
 package com.sanzenkai.mangatracker.data
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.sanzenkai.mangatracker.core.data.DataContainer
@@ -25,8 +26,15 @@ import com.sanzenkai.mangatracker.notifications.ChapterNotificationActionHandler
 import com.sanzenkai.mangatracker.notifications.ChapterNotificationManager
 import com.sanzenkai.mangatracker.notifications.ChapterNotificationPublisher
 import com.sanzenkai.mangatracker.ui.settings.SettingsViewModel
+import java.io.IOException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 class AppContainer(context: Context) {
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val dataContainer = DataContainer(context)
     private val discoveryEngine = SiteDiscoveryEngine(ParserRegistry(MangaSiteParsers.default()))
     private val siteDocumentFetcher = RoliaScanDocumentFetcher(
@@ -80,6 +88,7 @@ class AppContainer(context: Context) {
             libraryPreferencesRepository,
             mangaBackupExporter,
             mangaBackupImporter,
+            monitoringScheduler,
         )
 
     fun mangaDetailViewModelFactory(mangaId: String): ViewModelProvider.Factory =
@@ -91,11 +100,25 @@ class AppContainer(context: Context) {
         )
 
     fun ensureMonitoringScheduled() {
-        monitoringScheduler.ensurePeriodicMonitoring()
+        applicationScope.launch {
+            try {
+                monitoringScheduler.ensurePeriodicMonitoring(
+                    libraryPreferencesRepository.observeMonitoringInterval().first(),
+                )
+            } catch (error: IOException) {
+                Log.e(TAG, "Could not load the saved monitoring interval.", error)
+            } catch (error: IllegalStateException) {
+                Log.e(TAG, "Could not schedule periodic monitoring.", error)
+            }
+        }
     }
 
     fun ensureNotificationChannel() {
         chapterNotificationPublisher.ensureChannel()
+    }
+
+    private companion object {
+        const val TAG = "MangaTrackerApp"
     }
 }
 
@@ -123,6 +146,7 @@ private class SettingsViewModelFactory(
     private val preferencesRepository: LibraryPreferencesRepository,
     private val mangaBackupExporter: MangaBackupExporter,
     private val mangaBackupImporter: MangaBackupImporter,
+    private val monitoringScheduler: MonitoringScheduler,
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(SettingsViewModel::class.java)) {
@@ -131,6 +155,7 @@ private class SettingsViewModelFactory(
                 preferencesRepository,
                 mangaBackupExporter,
                 mangaBackupImporter,
+                monitoringScheduler,
             ) as T
         }
         throw IllegalArgumentException("Unsupported ViewModel: ${modelClass.name}")

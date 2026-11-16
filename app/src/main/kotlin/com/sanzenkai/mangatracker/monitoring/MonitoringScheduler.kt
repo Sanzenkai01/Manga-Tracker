@@ -1,7 +1,11 @@
 package com.sanzenkai.mangatracker.monitoring
 
+import com.sanzenkai.mangatracker.core.domain.model.MonitoringInterval
+
 interface MonitoringScheduler {
     fun ensurePeriodicMonitoring()
+
+    fun ensurePeriodicMonitoring(interval: MonitoringInterval) = ensurePeriodicMonitoring()
 
     fun enqueueAutomaticMangaCheck(mangaId: String)
 

@@ -23,7 +23,13 @@
     <string name="settings_language_title">Idioma do aplicativo</string>
     <string name="settings_language_follow_system">Segue o idioma do dispositivo quando disponível (inglês como alternativa).</string>
     <string name="settings_local_storage">Seus mangás, capítulos e histórico de leitura ficam salvos neste celular.</string>
-    <string name="settings_monitoring_limitation">O app procura capítulos novos mais ou menos uma vez por hora, quando há internet e bateria suficiente. O Android pode atrasar a busca.</string>
+    <string name="settings_monitoring_interval_title">Intervalo das buscas automáticas</string>
+    <string name="settings_monitoring_limitation">O app faz a busca no intervalo escolhido quando há internet e bateria suficiente. O Android pode adiar as buscas.</string>
+    <string name="settings_monitoring_interval_1h">A cada hora</string>
+    <string name="settings_monitoring_interval_3h">A cada 3 horas</string>
+    <string name="settings_monitoring_interval_6h">A cada 6 horas</string>
+    <string name="settings_monitoring_interval_12h">A cada 12 horas</string>
+    <string name="settings_monitoring_interval_24h">A cada 24 horas</string>
     <string name="settings_notifications_title">Notificações de capítulos</string>
     <string name="settings_notifications_enabled">Você pode receber avisos de novos capítulos.</string>
     <string name="settings_notifications_disabled">Os avisos de capítulos estão desativados. Você pode ativá-los nas configurações do Android.</string>

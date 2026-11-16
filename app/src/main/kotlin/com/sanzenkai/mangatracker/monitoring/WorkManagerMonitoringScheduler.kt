@@ -10,6 +10,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import com.sanzenkai.mangatracker.core.domain.model.MonitoringInterval
 import java.util.concurrent.TimeUnit
 
 class WorkManagerMonitoringScheduler(
@@ -18,8 +19,20 @@ class WorkManagerMonitoringScheduler(
     private val workManager = WorkManager.getInstance(context.applicationContext)
 
     override fun ensurePeriodicMonitoring() {
-        val request = PeriodicWorkRequestBuilder<MonitoringDispatchWorker>(
-            PERIOD_INTERVAL_HOURS,
+        ensurePeriodicMonitoring(MonitoringInterval.DEFAULT)
+    }
+
+    override fun ensurePeriodicMonitoring(interval: MonitoringInterval) {
+        workManager.enqueueUniquePeriodicWork(
+            UNIQUE_PERIODIC_MONITORING,
+            ExistingPeriodicWorkPolicy.UPDATE,
+            periodicMonitoringRequest(interval),
+        )
+    }
+
+    internal fun periodicMonitoringRequest(interval: MonitoringInterval) =
+        PeriodicWorkRequestBuilder<MonitoringDispatchWorker>(
+            interval.hours,
             TimeUnit.HOURS,
             PERIOD_FLEX_MINUTES,
             TimeUnit.MINUTES,
@@ -32,12 +45,6 @@ class WorkManagerMonitoringScheduler(
             )
             .addTag(TAG_PERIODIC_MONITORING)
             .build()
-        workManager.enqueueUniquePeriodicWork(
-            UNIQUE_PERIODIC_MONITORING,
-            ExistingPeriodicWorkPolicy.UPDATE,
-            request,
-        )
-    }
 
     override fun enqueueAutomaticMangaCheck(mangaId: String) {
         val request = OneTimeWorkRequestBuilder<MangaUpdateWorker>()
@@ -70,7 +77,6 @@ class WorkManagerMonitoringScheduler(
         const val UNIQUE_PERIODIC_MONITORING = "manga-tracker-periodic-monitoring"
         const val TAG_PERIODIC_MONITORING = "manga-tracker-periodic"
         const val TAG_AUTOMATIC_MANGA_CHECK = "manga-tracker-automatic-check"
-        const val PERIOD_INTERVAL_HOURS = 1L
         const val PERIOD_FLEX_MINUTES = 15L
         const val RETRY_BACKOFF_MINUTES = 30L
         const val TRIGGER_AUTOMATIC = "AUTOMATIC"

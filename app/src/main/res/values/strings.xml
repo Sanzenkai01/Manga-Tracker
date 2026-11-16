@@ -23,7 +23,13 @@
     <string name="settings_language_title">App language</string>
     <string name="settings_language_follow_system">Follows the device language when available (English fallback).</string>
     <string name="settings_local_storage">Your manga, chapters, and reading history stay saved on this device.</string>
-    <string name="settings_monitoring_limitation">The app looks for new chapters about once an hour when there is internet access and enough battery. Android may delay the search.</string>
+    <string name="settings_monitoring_interval_title">Automatic check interval</string>
+    <string name="settings_monitoring_limitation">The app checks using the selected interval when internet and enough battery are available. Android may delay checks.</string>
+    <string name="settings_monitoring_interval_1h">Every hour</string>
+    <string name="settings_monitoring_interval_3h">Every 3 hours</string>
+    <string name="settings_monitoring_interval_6h">Every 6 hours</string>
+    <string name="settings_monitoring_interval_12h">Every 12 hours</string>
+    <string name="settings_monitoring_interval_24h">Every 24 hours</string>
     <string name="settings_notifications_title">Chapter notifications</string>
     <string name="settings_notifications_enabled">You can receive alerts about new chapters.</string>
     <string name="settings_notifications_disabled">Chapter alerts are turned off. You can turn them on in Android settings.</string>

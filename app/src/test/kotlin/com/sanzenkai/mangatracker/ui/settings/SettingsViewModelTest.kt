@@ -4,9 +4,11 @@ import android.net.Uri
 import androidx.lifecycle.ViewModelStore
 import com.sanzenkai.mangatracker.core.domain.model.AppThemeMode
 import com.sanzenkai.mangatracker.core.domain.model.LibraryLayout
+import com.sanzenkai.mangatracker.core.domain.model.MonitoringInterval
 import com.sanzenkai.mangatracker.core.domain.repository.LibraryPreferencesRepository
 import com.sanzenkai.mangatracker.data.backup.MangaBackupExporter
 import com.sanzenkai.mangatracker.data.backup.MangaBackupImporter
+import com.sanzenkai.mangatracker.monitoring.MonitoringScheduler
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -59,6 +61,36 @@ class SettingsViewModelTest {
 
             assertEquals(AppThemeMode.DARK, preferences.themeMode.value)
             assertEquals(AppThemeMode.DARK, viewModel.uiState.value.themeMode)
+        } finally {
+            collection?.cancel()
+            viewModelStore.clear()
+        }
+    }
+
+    @Test
+    fun selectedMonitoringIntervalIsPersistedAndReschedulesPeriodicWork() = runTest {
+        val preferences = FakeLibraryPreferencesRepository()
+        val scheduler = RecordingMonitoringScheduler()
+        val viewModel = SettingsViewModel(
+            preferences,
+            FakeMangaBackupExporter(),
+            FakeMangaBackupImporter(),
+            scheduler,
+        )
+        val viewModelStore = ViewModelStore().apply { put("settings", viewModel) }
+        var collection: Job? = null
+        try {
+            collection = backgroundScope.launch(StandardTestDispatcher(testScheduler)) {
+                viewModel.uiState.collect()
+            }
+            advanceUntilIdle()
+
+            viewModel.setMonitoringInterval(MonitoringInterval.TWELVE_HOURS)
+            advanceUntilIdle()
+
+            assertEquals(MonitoringInterval.TWELVE_HOURS, preferences.monitoringInterval.value)
+            assertEquals(MonitoringInterval.TWELVE_HOURS, viewModel.uiState.value.monitoringInterval)
+            assertEquals(listOf(MonitoringInterval.TWELVE_HOURS), scheduler.scheduledIntervals)
         } finally {
             collection?.cancel()
             viewModelStore.clear()
@@ -186,6 +218,7 @@ class SettingsViewModelTest {
     private class FakeLibraryPreferencesRepository : LibraryPreferencesRepository {
         val layout = MutableStateFlow(LibraryLayout.LIST)
         val themeMode = MutableStateFlow(AppThemeMode.SYSTEM)
+        val monitoringInterval = MutableStateFlow(MonitoringInterval.DEFAULT)
 
         override fun observeLayout(): Flow<LibraryLayout> = layout
 
@@ -198,6 +231,26 @@ class SettingsViewModelTest {
         override suspend fun setThemeMode(themeMode: AppThemeMode) {
             this.themeMode.value = themeMode
         }
+
+        override fun observeMonitoringInterval(): Flow<MonitoringInterval> = monitoringInterval
+
+        override suspend fun setMonitoringInterval(interval: MonitoringInterval) {
+            monitoringInterval.value = interval
+        }
+    }
+
+    private class RecordingMonitoringScheduler : MonitoringScheduler {
+        val scheduledIntervals = mutableListOf<MonitoringInterval>()
+
+        override fun ensurePeriodicMonitoring() = Unit
+
+        override fun ensurePeriodicMonitoring(interval: MonitoringInterval) {
+            scheduledIntervals += interval
+        }
+
+        override fun enqueueAutomaticMangaCheck(mangaId: String) = Unit
+
+        override fun cancelAutomaticMangaCheck(mangaId: String) = Unit
     }
 
     private class FakeMangaBackupExporter : MangaBackupExporter {

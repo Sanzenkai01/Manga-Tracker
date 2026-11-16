@@ -112,6 +112,7 @@ fun MangaTrackerNavigation(
                 onBack = { navController.popBackStack() },
                 onLayoutChanged = settingsViewModel::setLibraryLayout,
                 onThemeModeChanged = settingsViewModel::setThemeMode,
+                onMonitoringIntervalChanged = settingsViewModel::setMonitoringInterval,
                 onEnableNotifications = {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                         context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
