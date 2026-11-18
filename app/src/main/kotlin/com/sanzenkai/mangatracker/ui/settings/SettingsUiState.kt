@@ -6,6 +6,7 @@ import com.sanzenkai.mangatracker.core.domain.model.MonitoringInterval
 
 data class SettingsUiState(
     val isLoading: Boolean = true,
+    val isThemePreferenceLoaded: Boolean = false,
     val libraryLayout: LibraryLayout = LibraryLayout.LIST,
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     val monitoringInterval: MonitoringInterval = MonitoringInterval.DEFAULT,

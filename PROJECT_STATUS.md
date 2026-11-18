@@ -1,6 +1,8 @@
 # Project status
 
-**Last updated:** 2026-11-16
+**Last updated:** 2026-11-17
+
+**Opening animation (2026-11-17):** System splash and a Compose icon overlay are implemented for cold launcher starts when system animations are enabled; notification launches and recreated activities do not restart the entrance. The splash waits for the persisted theme preference up to 600 ms to avoid a light frame before a dark app theme. `:app:testDebugUnitTest`, `:app:lintDebug`, and `:app:assembleDebug` passed (72 JVM tests, no failures). No Android device/emulator was connected, so visual validation on Android 8–11 and 12+ remains unverified.
 
 **Large cover images (2026-11-16):** Two Império da Britannia PNG covers were verified to return HTTP 200 with sizes of 12.3 MB and 18.0 MB; the app's image client previously rejected responses above 2 MiB. Image loading now streams responses within a 20 MiB cap and allows longer transfer timeouts. Core data tests, app lint, and debug assembly passed; rendering on the user's device remains unverified.
 

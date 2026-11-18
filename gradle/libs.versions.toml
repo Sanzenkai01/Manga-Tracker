@@ -4,6 +4,7 @@ kotlin = "2.1.21"
 ksp = "2.1.21-2.0.1"
 composeBom = "2025.05.00"
 androidxCore = "1.16.0"
+androidxCoreSplashscreen = "1.2.0"
 activityCompose = "1.10.1"
 lifecycle = "2.9.0"
 navigationCompose = "2.9.0"
@@ -24,6 +25,7 @@ re2j = "1.8"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidxCore" }
+androidx-core-splashscreen = { module = "androidx.core:core-splashscreen", version.ref = "androidxCoreSplashscreen" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
 androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
 androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }

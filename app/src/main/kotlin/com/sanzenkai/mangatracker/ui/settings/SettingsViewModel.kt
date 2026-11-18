@@ -40,6 +40,7 @@ class SettingsViewModel(
     ) { layout, themeMode, monitoringInterval, error, backup ->
         SettingsUiState(
             isLoading = false,
+            isThemePreferenceLoaded = true,
             libraryLayout = layout,
             themeMode = themeMode,
             monitoringInterval = monitoringInterval,

@@ -2,6 +2,19 @@
 
 Project changes are recorded here. Entries describe repository changes, not planned or unverified app behavior.
 
+## 2026-11-17 — Adicionando a animação de abertura
+
+### Alterações
+
+- A splash do sistema usa o ícone do app em um drawable com margem segura. A tela de abertura Compose anima o mesmo PNG, pode ser pulada por toque e aparece somente em uma abertura nova pelo launcher quando as animações do sistema estão ativas; abrir por notificação não repete o overlay.
+- A splash aguarda a primeira emissão da preferência de tema, com limite de 600 ms, para evitar um frame claro antes do tema escuro. O estágio da animação é salvo para que uma rotação não reinicie a entrada.
+- `androidx.core:core-splashscreen` 1.2.0 foi adicionado para configurar a splash de forma compatível entre versões do Android.
+
+### Verificação
+
+- Passou: `.\gradlew.bat --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug` — 72 testes JVM, sem falhas; lint e assemble debug concluídos com sucesso.
+- Não havia dispositivo/emulador conectado; a transição visual em Android 8–11 e Android 12+ não foi verificada.
+
 ## 2026-11-16 — Carregando capas PNG grandes
 
 ### Alterações

@@ -1,5 +1,6 @@
 <resources>
     <string name="app_name">Manga Tracker</string>
+    <string name="opening_animation_content_description">Manga Tracker opening animation</string>
     <string name="library_title">My library</string>
     <string name="library_empty_title">Your library is empty</string>
     <string name="library_empty_body">Manga you add will appear here.</string>

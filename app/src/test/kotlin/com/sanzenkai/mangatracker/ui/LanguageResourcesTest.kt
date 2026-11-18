@@ -19,6 +19,10 @@ class LanguageResourcesTest {
         val context = RuntimeEnvironment.getApplication()
 
         assertEquals("Settings", context.getString(R.string.settings_title))
+        assertEquals(
+            "Manga Tracker opening animation",
+            context.getString(R.string.opening_animation_content_description),
+        )
         assertEquals("Add a manga", context.getString(R.string.site_discovery_action))
         assertEquals("Add a manga", context.getString(R.string.site_discovery_title))
         assertEquals("Search", context.getString(R.string.site_analyze_button))
@@ -56,6 +60,10 @@ class LanguageResourcesTest {
         val context = RuntimeEnvironment.getApplication()
 
         assertEquals("Configurações", context.getString(R.string.settings_title))
+        assertEquals(
+            "Animação de abertura do Manga Tracker",
+            context.getString(R.string.opening_animation_content_description),
+        )
         assertEquals("Adicionar um mangá", context.getString(R.string.site_discovery_action))
         assertEquals("Adicionar mangá", context.getString(R.string.site_discovery_title))
         assertEquals("Buscar", context.getString(R.string.site_analyze_button))

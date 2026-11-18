@@ -63,6 +63,10 @@ Permitir que a pessoa acompanhe mangás a partir de links de páginas de capítu
 29. **Organização das configurações.** Separar visualmente os grupos de preferências nas configurações, mantendo suas ações e opções atuais.
 30. **Monitoramento com problema.** Derivar o estado das tentativas já registradas: pelo menos cinco falhas consecutivas elegíveis ou mais de três dias desde o último sucesso, desde que haja uma falha elegível. Contar respostas de servidor e falhas de parsing; falhas exclusivamente de rede do usuário não indicam que o site esteja quebrado. Mostrar um selo na biblioteca e uma explicação nos detalhes, e emitir no máximo uma notificação por episódio em canal próprio enquanto o monitoramento estiver ativo. Um sucesso encerra o episódio; preferir consulta derivada sem migração de schema.
 
+### Abertura do app
+
+- Em uma abertura a frio pelo launcher, exibir a imagem do ícone em uma animação de até aproximadamente 1,5 s, pulável por toque e desativada quando as animações do sistema estiverem desligadas.
+
 ## Regras invariantes
 
 - O estado de leitura só muda por ação explícita de marcar/desmarcar; abrir um capítulo, abrir a notificação ou detectar um capítulo não altera esse estado por si só.
